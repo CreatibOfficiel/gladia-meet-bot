@@ -81,35 +81,38 @@
                 if (response.ok) {
                     statusDiv.innerHTML = '<div class="success">✅ Bot launched successfully!</div>';
                     
-                    // Display session ID and meeting info
+                    // Display session info
                     const sessionInfo = `
 Session ID: ${result.id}
 Meeting ID: ${result.native_meeting_id}
 Platform: ${result.platform}
 Status: ${result.status}
-Container ID: ${result.bot_container_id}
                     `.trim();
                     
-                    logsDiv.innerHTML = 'Session Info:\n' + sessionInfo + '\n\nFull Response:\n' + JSON.stringify(result, null, 2);
+                    logsDiv.innerHTML = '<div style="background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: monospace; margin-bottom: 20px;">' + 
+                                      '<strong>Session Info:</strong><br>' + 
+                                      sessionInfo.replace(/\n/g, '<br>') + 
+                                      '</div>';
                     
                     // Add link to transcript retriever
                     const transcriptLink = document.createElement('div');
                     transcriptLink.style.marginTop = '20px';
-                    transcriptLink.style.padding = '15px';
+                    transcriptLink.style.padding = '20px';
                     transcriptLink.style.backgroundColor = '#e7f3ff';
-                    transcriptLink.style.border = '1px solid #b3d9ff';
-                    transcriptLink.style.borderRadius = '4px';
+                    transcriptLink.style.border = '2px solid #007bff';
+                    transcriptLink.style.borderRadius = '8px';
+                    transcriptLink.style.textAlign = 'center';
+                    transcriptLink.style.fontSize = '16px';
                     transcriptLink.innerHTML = `
-                        <strong>📄 View Transcripts:</strong><br>
-                        <a href="http://localhost:8083?session_id=${result.id}" target="_blank" style="color: #007bff; text-decoration: none; font-weight: bold;">
+                        <strong style="font-size: 18px; color: #0056b3;">📄 View Transcripts</strong><br><br>
+                        <a href="http://194.60.67.33:8083?session_id=${result.id}" target="_blank" style="color: #007bff; text-decoration: none; font-weight: bold; font-size: 16px; padding: 10px 20px; background: #007bff; color: white; border-radius: 5px; display: inline-block;">
                             🔗 Open Transcript Retriever for Session ${result.id}
-                        </a><br>
-                        <small>Click the link above to view and download transcriptions for this meeting.</small>
+                        </a><br><br>
+                        <small style="color: #666;">Click the button above to view and download transcriptions for this meeting.</small>
                     `;
                     logsDiv.appendChild(transcriptLink);
                     
-                    // Start monitoring
-                    monitorBot(data.native_meeting_id);
+                    // Bot launched successfully - no automatic monitoring
                 } else {
                     statusDiv.innerHTML = '<div class="error">❌ Error: ' + result.error + '</div>';
                 }
@@ -119,35 +122,7 @@ Container ID: ${result.bot_container_id}
             }
         });
         
-        async function monitorBot(meetingId) {
-            const logsDiv = document.getElementById('logs');
-            
-            // Monitor for 60 seconds
-            for (let i = 0; i < 60; i++) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                
-                try {
-                    const response = await fetch('/status');
-                    const status = await response.json();
-                    
-                    // Find the specific bot for this meeting
-                    const bot = status.running_bots ? status.running_bots.find(bot => 
-                        bot.native_meeting_id === meetingId
-                    ) : null;
-                    
-                    if (bot) {
-                        logsDiv.innerHTML = 'Monitoring bot... (' + (i+1) + '/60s)\n' + 
-                                          'Status: ' + JSON.stringify(bot, null, 2);
-                    } else {
-                        logsDiv.innerHTML = 'Monitoring bot... (' + (i+1) + '/60s)\n' + 
-                                          'Bot not found in running bots list';
-                    }
-                } catch (error) {
-                    logsDiv.innerHTML = 'Monitoring bot... (' + (i+1) + '/60s)\n' + 
-                                      'Error getting status: ' + error.message;
-                }
-            }
-        }
+
     </script>
 </body>
 </html> 
