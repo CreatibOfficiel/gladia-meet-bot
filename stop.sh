@@ -40,28 +40,28 @@ case $choice in
     1)
         print_info "Arrêt simple des services..."
         # Arrêter les services de test
-        if docker-compose -f docker-compose.test.yml ps | grep -q "Up"; then
-            docker-compose -f docker-compose.test.yml down
+        if docker compose -f docker-compose.test.yml ps | grep -q "Up"; then
+            docker compose -f docker-compose.test.yml down
             print_success "Services de test arrêtés"
         fi
         
         # Arrêter les services complets
-        if docker-compose ps | grep -q "Up"; then
-            docker-compose down
+        if docker compose ps | grep -q "Up"; then
+            docker compose down
             print_success "Services complets arrêtés"
         fi
         ;;
     2)
         print_info "Arrêt complet des services..."
         # Arrêter et supprimer les conteneurs de test
-        if docker-compose -f docker-compose.test.yml ps | grep -q "Up"; then
-            docker-compose -f docker-compose.test.yml down
+        if docker compose -f docker-compose.test.yml ps | grep -q "Up"; then
+            docker compose -f docker-compose.test.yml down
             print_success "Conteneurs de test supprimés"
         fi
         
         # Arrêter et supprimer les conteneurs complets
-        if docker-compose ps | grep -q "Up"; then
-            docker-compose down
+        if docker compose ps | grep -q "Up"; then
+            docker compose down
             print_success "Conteneurs complets supprimés"
         fi
         ;;
@@ -72,8 +72,8 @@ case $choice in
             print_info "Nettoyage complet en cours..."
             
             # Arrêter et supprimer tout
-            docker-compose -f docker-compose.test.yml down -v 2>/dev/null
-            docker-compose down -v 2>/dev/null
+            docker compose -f docker-compose.test.yml down -v 2>/dev/null
+            docker compose down -v 2>/dev/null
             
             # Supprimer les images
             docker image prune -f
@@ -92,8 +92,8 @@ case $choice in
         ;;
     *)
         print_error "Choix invalide. Arrêt simple par défaut."
-        docker-compose -f docker-compose.test.yml down 2>/dev/null
-        docker-compose down 2>/dev/null
+        docker compose -f docker-compose.test.yml down 2>/dev/null
+        docker compose down 2>/dev/null
         ;;
 esac
 

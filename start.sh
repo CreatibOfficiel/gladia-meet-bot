@@ -16,7 +16,7 @@ fi
 
 # Start the services
 echo "🐳 Starting Docker services..."
-docker-compose up -d
+docker compose up -d
 
 # Wait for services to be ready
 echo "⏳ Waiting for services to be ready..."
@@ -24,7 +24,7 @@ sleep 10
 
 # Initialize database if needed
 echo "🗄️  Initializing database..."
-docker-compose exec -T admin-api python app/scripts/recreate_db.py <<< "recreate" || {
+docker compose exec -T admin-api python app/scripts/recreate_db.py <<< "recreate" || {
     echo "⚠️  Database initialization failed, but continuing..."
 }
 
@@ -72,7 +72,7 @@ if [ -z "$USER_EXISTS" ]; then
             
             # Restart services to pick up new token
             echo "🔄 Restarting services with new API token..."
-            docker-compose restart bot-launcher transcript-retriever
+            docker compose restart bot-launcher transcript-retriever
         else
             echo "⚠️  Failed to create API token"
         fi

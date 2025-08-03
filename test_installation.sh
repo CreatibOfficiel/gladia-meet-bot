@@ -37,7 +37,7 @@ SERVICES=("postgres" "redis" "api-gateway" "admin-api" "bot-manager" "bot-launch
 
 ALL_RUNNING=true
 for service in "${SERVICES[@]}"; do
-    if docker-compose ps | grep -q "$service.*Up"; then
+    if docker compose ps | grep -q "$service.*Up"; then
         print_success "$service is running"
     else
         print_error "$service is not running"
@@ -55,7 +55,7 @@ echo ""
 
 # Test 2: Check database connectivity
 print_info "Test 2: Testing database connectivity..."
-if docker-compose exec -T postgres pg_isready -U postgres -d vexa -q; then
+if docker compose exec -T postgres pg_isready -U postgres -d vexa -q; then
     print_success "Database is accessible"
 else
     print_error "Database is not accessible"
@@ -130,7 +130,7 @@ echo ""
 
 # Test 8: Check Redis connectivity
 print_info "Test 8: Testing Redis connectivity..."
-if docker-compose exec -T redis redis-cli ping | grep -q "PONG"; then
+if docker compose exec -T redis redis-cli ping | grep -q "PONG"; then
     print_success "Redis is responding"
 else
     print_error "Redis is not responding"
