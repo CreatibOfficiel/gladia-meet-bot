@@ -1,0 +1,141 @@
+name: vexa_dev
+services:
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    ports:
+      - "${API_GATEWAY_HOST_PORT:-8056}:8000"
+    environment:
+      - ADMIN_API_URL=http://admin-api:8001
+      - BOT_MANAGER_URL=http://bot-manager:8080
+      - LOG_LEVEL=DEBUG
+    init: true
+    depends_on:
+      admin-api:
+        condition: service_started
+      bot-manager:
+        condition: service_started
+    networks:
+      - vexa_default
+    restart: unless-stopped
+
+  admin-api:
+    build:
+      context: .
+      dockerfile: services/admin-api/Dockerfile
+    ports:
+      - "${ADMIN_API_HOST_PORT:-8057}:8001"
+    env_file:
+      - ../.env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=vexa
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - LOG_LEVEL=DEBUG
+    init: true
+    depends_on:
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks:
+      - vexa_default
+    restart: unless-stopped
+
+  bot-manager:
+    build:
+      context: .
+      dockerfile: services/bot-manager/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - BOT_IMAGE_NAME=${BOT_IMAGE_NAME:-vexa-bot:dev}
+      - DEVICE_TYPE=${DEVICE_TYPE:-cpu}
+      - DOCKER_NETWORK=${COMPOSE_PROJECT_NAME:-vexa}_vexa_default
+      - LOG_LEVEL=DEBUG
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=vexa
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DOCKER_HOST=unix://var/run/docker.sock
+      - GLADIA_API_KEY=${GLADIA_API_KEY}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    init: true
+    depends_on:
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks:
+      - vexa_default
+    restart: unless-stopped
+
+  # Replace nginx load-balancer with Traefik
+  traefik:
+    image: traefik:v2.10
+    ports:
+      - "${TRAEFIK_WEB_HOST_PORT:-9090}:80" # Expose on host port
+      - "${TRAEFIK_DASHBOARD_HOST_PORT:-8085}:8080" # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik.toml:/etc/traefik/traefik.toml:ro
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--log.level=DEBUG"
+      - "--providers.docker.constraints=Label(`traefik.enable`, `true`)"
+      - "--providers.docker.watch=true"
+    networks:
+      vexa_default:
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.0-alpine
+    command:
+      ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redis-data:/data
+    networks:
+      - vexa_default
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=vexa
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vexa"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vexa_default
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_HOST_PORT:-5438}:5432"
+
+volumes:
+  redis-data:
+  postgres-data:
+
+networks:
+  vexa_default:
+    driver: bridge

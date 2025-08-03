@@ -1,0 +1,36 @@
+services:
+  # Nouveaux services dockerisés (test uniquement)
+  bot-launcher:
+    build: ./services/bot-launcher/
+    ports:
+      - "8081:8080"
+    environment:
+      - API_GATEWAY_URL=http://host.docker.internal:18056
+      - API_KEY=${API_KEY}
+    networks:
+      - test_network
+
+  log-monitor:
+    build: ./services/log-monitor/
+    ports:
+      - "8082:8080"
+    environment:
+      - REDIS_URL=redis://host.docker.internal:6379
+    networks:
+      - test_network
+
+  transcript-retriever:
+    build: ./services/transcript-retriever/
+    ports:
+      - "8083:8080"
+    environment:
+      - API_GATEWAY_URL=http://host.docker.internal:18056
+      - API_KEY=${API_KEY}
+      - GLADIA_API_KEY=${GLADIA_API_KEY}
+      - REDIS_URL=redis://host.docker.internal:6379
+    networks:
+      - test_network
+
+networks:
+  test_network:
+    driver: bridge

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vexa Bot Launcher</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        button { background: #007bff; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .status { margin-top: 20px; padding: 15px; border-radius: 4px; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        .logs { background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: monospace; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Vexa Bot Launcher</h1>
+        
+        <form id="botForm">
+            <div class="form-group">
+                <label for="meeting_id">Meeting ID:</label>
+                <input type="text" id="meeting_id" name="meeting_id" placeholder="ex: cia-spqx-acb" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="bot_name">Bot Name:</label>
+                <input type="text" id="bot_name" name="bot_name" placeholder="ex: VexaBot-Test" value="VexaBot-Test">
+            </div>
+            
+            <button type="submit">🚀 Launch Bot</button>
+        </form>
+        
+        <div id="status"></div>
+        <div id="logs"></div>
+    </div>
+
+    <script>
+        console.log('Bot Launcher JavaScript loaded');
+        
+        // Test simple pour vérifier que JavaScript fonctionne
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded');
+        });
+        
+        document.getElementById('botForm').addEventListener('submit', async (e) => {
+            console.log('Form submitted');
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = {
+                platform: "google_meet",
+                native_meeting_id: formData.get('meeting_id'),
+                bot_name: formData.get('bot_name')
+            };
+            
+            console.log('Data to send:', data);
+            
+            const statusDiv = document.getElementById('status');
+            const logsDiv = document.getElementById('logs');
+            
+            statusDiv.innerHTML = '<div class="info">🔄 Launching bot...</div>';
+            logsDiv.innerHTML = '';
+            
+            try {
+                console.log('Sending request to /launch');
+                const response = await fetch('/launch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                console.log('Response status:', response.status);
+                const result = await response.json();
+                console.log('Response data:', result);
+                
+                if (response.ok) {
+                    statusDiv.innerHTML = '<div class="success">✅ Bot launched successfully!</div>';
+                    
+                    // Display session ID and meeting info
+                    const sessionInfo = `
+Session ID: ${result.id}
+Meeting ID: ${result.native_meeting_id}
+Platform: ${result.platform}
+Status: ${result.status}
+Container ID: ${result.bot_container_id}
+                    `.trim();
+                    
+                    logsDiv.innerHTML = 'Session Info:\n' + sessionInfo + '\n\nFull Response:\n' + JSON.stringify(result, null, 2);
+                    
+                    // Add link to transcript retriever
+                    const transcriptLink = document.createElement('div');
+                    transcriptLink.style.marginTop = '20px';
+                    transcriptLink.style.padding = '15px';
+                    transcriptLink.style.backgroundColor = '#e7f3ff';
+                    transcriptLink.style.border = '1px solid #b3d9ff';
+                    transcriptLink.style.borderRadius = '4px';
+                    transcriptLink.innerHTML = `
+                        <strong>📄 View Transcripts:</strong><br>
+                        <a href="http://localhost:8083?session_id=${result.id}" target="_blank" style="color: #007bff; text-decoration: none; font-weight: bold;">
+                            🔗 Open Transcript Retriever for Session ${result.id}
+                        </a><br>
+                        <small>Click the link above to view and download transcriptions for this meeting.</small>
+                    `;
+                    logsDiv.appendChild(transcriptLink);
+                    
+                    // Start monitoring
+                    monitorBot(data.native_meeting_id);
+                } else {
+                    statusDiv.innerHTML = '<div class="error">❌ Error: ' + result.error + '</div>';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                statusDiv.innerHTML = '<div class="error">❌ Network error: ' + error.message + '</div>';
+            }
+        });
+        
+        async function monitorBot(meetingId) {
+            const logsDiv = document.getElementById('logs');
+            
+            // Monitor for 60 seconds
+            for (let i = 0; i < 60; i++) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                try {
+                    const response = await fetch('/status');
+                    const status = await response.json();
+                    
+                    // Find the specific bot for this meeting
+                    const bot = status.running_bots ? status.running_bots.find(bot => 
+                        bot.native_meeting_id === meetingId
+                    ) : null;
+                    
+                    if (bot) {
+                        logsDiv.innerHTML = 'Monitoring bot... (' + (i+1) + '/60s)\n' + 
+                                          'Status: ' + JSON.stringify(bot, null, 2);
+                    } else {
+                        logsDiv.innerHTML = 'Monitoring bot... (' + (i+1) + '/60s)\n' + 
+                                          'Bot not found in running bots list';
+                    }
+                } catch (error) {
+                    logsDiv.innerHTML = 'Monitoring bot... (' + (i+1) + '/60s)\n' + 
+                                      'Error getting status: ' + error.message;
+                }
+            }
+        }
+    </script>
+</body>
+</html> 

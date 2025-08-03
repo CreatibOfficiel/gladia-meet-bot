@@ -1,0 +1,11 @@
+{
+  "meetingUrl": "https://meet.google.com/upt-eups-xjc",
+  "botName": "GladiaBot",
+  "platform": "google_meet",
+  "language": "en",
+  "task": "transcribe",
+  "automaticLeave": {
+    "waitingRoomTimeout": 30000
+  },
+  "reconnectionIntervalMs": 1000
+} 

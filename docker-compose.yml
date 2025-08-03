@@ -1,0 +1,111 @@
+services:
+  # Services existants (extensions du docker-compose.yml de vexa)
+  api-gateway:
+    extends:
+      file: ./vexa/docker-compose.yml
+      service: api-gateway
+    networks:
+      - vexa_default
+      - vexa_network
+
+  bot-manager:
+    extends:
+      file: ./vexa/docker-compose.yml
+      service: bot-manager
+    networks:
+      - vexa_default
+      - vexa_network
+
+  admin-api:
+    extends:
+      file: ./vexa/docker-compose.yml
+      service: admin-api
+    networks:
+      - vexa_default
+      - vexa_network
+
+  redis:
+    extends:
+      file: ./vexa/docker-compose.yml
+      service: redis
+    networks:
+      - vexa_default
+      - vexa_network
+
+  postgres:
+    extends:
+      file: ./vexa/docker-compose.yml
+      service: postgres
+    networks:
+      - vexa_default
+      - vexa_network
+
+  traefik:
+    extends:
+      file: ./vexa/docker-compose.yml
+      service: traefik
+    networks:
+      - vexa_default
+      - vexa_network
+
+  # Nouveaux services dockerisés
+  bot-launcher:
+    build: ./services/bot-launcher/
+    ports:
+      - "8081:8080"
+    environment:
+      - API_GATEWAY_URL=http://api-gateway:8000
+      - API_KEY=${API_KEY}
+    depends_on:
+      - api-gateway
+    networks:
+      - vexa_network
+      - vexa_default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bot-launcher.rule=Host(`bot-launcher.localhost`)"
+      - "traefik.http.services.bot-launcher.loadbalancer.server.port=8080"
+
+  log-monitor:
+    build: ./services/log-monitor/
+    ports:
+      - "8082:8080"
+    environment:
+      - API_KEY=${API_KEY}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - vexa_network
+      - vexa_default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.log-monitor.rule=Host(`log-monitor.localhost`)"
+      - "traefik.http.services.log-monitor.loadbalancer.server.port=8080"
+
+  transcript-retriever:
+    build: ./services/transcript-retriever/
+    ports:
+      - "8083:8080"
+    environment:
+      - API_GATEWAY_URL=http://api-gateway:8000
+      - API_KEY=${API_KEY}
+      - GLADIA_API_KEY=${GLADIA_API_KEY}
+    depends_on:
+      - api-gateway
+    networks:
+      - vexa_network
+      - vexa_default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.transcript-retriever.rule=Host(`transcript-retriever.localhost`)"
+      - "traefik.http.services.transcript-retriever.loadbalancer.server.port=8080"
+
+volumes:
+  redis-data:
+  postgres-data:
+
+networks:
+  vexa_network:
+    driver: bridge
+  vexa_default:
+    driver: bridge
