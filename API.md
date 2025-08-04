@@ -480,6 +480,35 @@ curl -X PUT -H "Content-Type: application/json" \
   http://localhost:8056/user/webhook
 ```
 
+#### 14. Webhook n8n automatique ✅
+
+**Description** : Le système envoie automatiquement un webhook à n8n quand un bot quitte un meeting.
+
+**Configuration** : Ajouter dans le fichier `.env` :
+
+```bash
+N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/vexa-bot-exit
+```
+
+**Données envoyées** :
+
+```json
+{
+  "meeting_id": 2,
+  "platform": "google_meet",
+  "native_meeting_id": "test-meeting-456",
+  "user_id": 2,
+  "status": "completed",
+  "start_time": "2025-08-04T04:45:47.030813",
+  "end_time": "2025-08-04T04:46:02.038136"
+}
+```
+
+**Utilisation dans n8n** :
+- Récupérer la transcription via : `GET /transcripts/{platform}/{native_meeting_id}`
+- Authentification : Configurer l'API key dans n8n
+- URL de base : Configurer l'URL de l'API gateway dans n8n
+
 ---
 
 ## 🚀 Workflow typique
@@ -547,6 +576,9 @@ GLADIA_API_KEY=your_gladia_api_key
 API_GATEWAY_URL=http://api-gateway:8000
 BOT_MANAGER_URL=http://bot-manager:8080
 ADMIN_API_URL=http://admin-api:8001
+
+# Configuration webhook n8n (optionnel)
+N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/vexa-bot-exit
 ```
 
 ---

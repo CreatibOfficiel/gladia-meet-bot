@@ -32,6 +32,13 @@ GLADIA_API_KEY=your_gladia_api_key_here
 API_KEY=to_be_generate
 ```
 
+**Variables optionnelles :**
+
+```bash
+# Configuration webhook n8n (optionnel)
+N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/vexa-bot-exit
+```
+
 ### **3. Démarrer l'architecture Vexa existante**
 
 ```bash
@@ -80,6 +87,14 @@ Une fois tous les services démarrés, vous pouvez accéder aux interfaces suiva
 2. Saisir un ID de meeting Google Meet (ex: `test-meeting-123`)
 3. Cliquer sur "🚀 Launch Bot"
 4. Vérifier que le bot se lance correctement
+
+### **4. Test du webhook n8n (optionnel)**
+
+Si vous avez configuré `N8N_WEBHOOK_URL` :
+
+1. Lancer un bot et l'arrêter
+2. Vérifier que le webhook est envoyé à n8n
+3. Les données envoyées incluent : `meeting_id`, `platform`, `native_meeting_id`, `user_id`, `status`, `start_time`, `end_time`
 
 ### **2. Test du Log Monitor**
 

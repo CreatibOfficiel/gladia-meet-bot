@@ -42,7 +42,7 @@ The Vexa API provides powerful abstractions and a clear separation of concerns, 
 
 For instance, the **Vexa Example Client** (see [Projects Built with Vexa](BUILT-WITH-VEXA.md)) was built in just 3 hours of live coding with Cursor, showcasing the rapid development possible with Vexa.
 
-Furthermore, with our **n8n integration** (see [Projects Built with Vexa](BUILT-WITH-VEXA.md) for examples), you can create incredibly complex workflows with no code, leveraging real-time transcription from Google Meet (with support for other platforms coming soon).
+Furthermore, with our **n8n integration** (see [Projects Built with Vexa](BUILT-WITH-VEXA.md) for examples), you can create incredibly complex workflows with no code, leveraging real-time transcription from Google Meet (with support for other platforms coming soon). The system also includes **automatic webhook notifications** to n8n when meetings end, enabling seamless workflow automation.
 
 <p align="center">
   <img src="assets/simplified_flow.png" alt="Vexa Architecture Flow" width="100%"/>

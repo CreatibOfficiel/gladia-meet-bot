@@ -12,6 +12,12 @@ cp env.example .env
 nano .env
 ```
 
+**Configuration optionnelle webhook n8n :**
+```bash
+# Ajouter dans .env pour recevoir des webhooks automatiques
+N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/vexa-bot-exit
+```
+
 ### **2. Démarrage automatique**
 
 ```bash
@@ -43,6 +49,10 @@ nano .env
 1. Ouvrir http://localhost:8083
 2. Saisir l'ID du meeting
 3. Cliquer sur "🔍 Retrieve Transcript"
+
+### **Webhook n8n automatique**
+
+Si configuré, le système envoie automatiquement un webhook à n8n quand un bot quitte un meeting avec les données minimales nécessaires pour récupérer la transcription.
 
 ## 🔧 **Commandes utiles**
 

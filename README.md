@@ -139,6 +139,7 @@ docker-compose -f docker-compose.test.yml up -d
   - Envoi d'événements SPEAKER_START/SPEAKER_END
   - Extraction automatique des noms des participants
 - **Monitoring DOM** : Observation des changements d'interface pour détecter les nouveaux participants
+- **Webhook n8n** : Envoi automatique d'un webhook à n8n quand un bot quitte un meeting
 
 ### **✅ Interface web moderne**
 
@@ -185,6 +186,9 @@ API_KEY=your_vexa_api_key
 # URLs des services
 API_GATEWAY_URL=http://api-gateway:8080
 REDIS_URL=redis://redis:6379
+
+# Configuration webhook n8n (optionnel)
+N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/vexa-bot-exit
 ```
 
 ## 📊 **Monitoring et logs**
