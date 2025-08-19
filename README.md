@@ -187,6 +187,16 @@ API_KEY=your_vexa_api_key
 API_GATEWAY_URL=http://api-gateway:8080
 REDIS_URL=redis://redis:6379
 
+# Logs bot (optionnel)
+# Répertoire ABSOLU côté host pour stocker les logs par appel (monté dans les conteneurs)
+BOT_LOGS_HOST_DIR=/absolute/path/on/host/vexa-bot-logs
+LOG_LEVEL=INFO
+
+# Keep-Alive audio (optionnel)
+# Envoie un micro-chunk silencieux toutes les X ms pour maintenir la session Gladia ouverte
+# 0 = désactivé (par défaut). Exemple: 15000 pour 15s
+KEEP_ALIVE_INTERVAL_MS=0
+
 # Configuration webhook n8n (optionnel)
 N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/vexa-bot-exit
 ```
@@ -207,6 +217,10 @@ docker-compose logs -f transcript-retriever
 
 # Logs des services Vexa
 cd vexa && docker-compose logs -f bot-manager
+
+# Logs par appel (fichiers)
+# Si BOT_LOGS_HOST_DIR est configuré, des fichiers `bot_<connectionId>.log` seront créés
+# dans ce dossier lors de chaque appel, contenant les événements audio/Gladia détaillés.
 ```
 
 ### **Statut des conteneurs**
@@ -263,6 +277,9 @@ docker-compose logs vexa-bot-*
 
 # Vérifier la connexion à Gladia
 curl -H "X-GLADIA-KEY: $GLADIA_API_KEY" https://api.gladia.io/v2/live
+
+# Rappel: les endpoints /meetings n'incluent pas la transcription
+# Utilisez le Transcript Retriever (/retrieve) ou un endpoint /transcripts/... si activé
 ```
 
 **Services ne démarrent pas :**

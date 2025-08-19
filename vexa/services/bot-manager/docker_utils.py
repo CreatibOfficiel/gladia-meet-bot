@@ -248,6 +248,8 @@ async def start_bot_container(
         "language": language,
         "task": task,
         "redisUrl": REDIS_URL,
+        # Optional keep-alive disabled by default; can be set by env or left None
+        "keepAliveIntervalMs": int(os.getenv('KEEP_ALIVE_INTERVAL_MS', '0')) or None,
         "automaticLeave": {
             "waitingRoomTimeout": 300000,
             "noOneJoinedTimeout": 120000,
@@ -276,6 +278,7 @@ async def start_bot_container(
         f"BOT_CONFIG={bot_config_json}",
         f"GLADIA_API_KEY={gladia_api_key_for_bot}", # Use the API key from bot-manager's env
         f"LOG_LEVEL={os.getenv('LOG_LEVEL', 'INFO').upper()}",
+        f"BOT_LOG_DIR=/var/log/vexa-bot"  # Location inside container for per-call logs
     ]
 
     # Ensure absolute path for URL encoding here as well
@@ -291,7 +294,10 @@ async def start_bot_container(
         "Labels": {"vexa.user_id": str(user_id)}, # *** ADDED Label ***
         "HostConfig": {
             "NetworkMode": DOCKER_NETWORK,
-            "AutoRemove": True
+            "AutoRemove": True,
+            "Binds": [
+                f"{os.getenv('BOT_LOGS_HOST_DIR', '/var/log/vexa-bot')}:/var/log/vexa-bot"
+            ]
         },
     }
 

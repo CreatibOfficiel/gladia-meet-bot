@@ -294,6 +294,41 @@ curl -H "X-API-Key: YOUR_API_KEY" \
   http://localhost:8056/meetings/5
 ```
 
+### Meetings
+
+#### 6. Lister les réunions de l'utilisateur ✅
+
+**Endpoint** : `GET /meetings`
+
+**Description** : Retourne la liste des réunions de l'utilisateur. La transcription n'est PAS incluse dans cette réponse.
+
+**Réponse** :
+
+```json
+[
+  {
+    "id": 7,
+    "platform": "google_meet",
+    "platform_specific_id": "xbj-ubib-feg",
+    "status": "completed",
+    "gladia_session_id": "03e4540b-278a-439d-a288-3ddb6ac44c01",
+    "start_time": "2025-08-04T09:53:32.271961",
+    "end_time": "2025-08-04T09:54:19.926465",
+    "data": {}
+  }
+]
+```
+
+> Pour récupérer la transcription, utilisez l'endpoint du Transcript Retriever (`POST /retrieve`) avec un `session_id` (ou l'UUID Gladia), ou l'endpoint de transcript par meeting si disponible.
+
+#### 7. Détails d'une réunion ✅
+
+**Endpoint** : `GET /meetings/{meeting_id}`
+
+**Description** : Détaille une réunion spécifique. La transcription n'est PAS incluse; utiliser `POST /retrieve` pour le texte.
+
+—
+
 ### Transcriptions
 
 #### 8. Récupérer une transcription ✅
@@ -308,6 +343,29 @@ curl -H "X-API-Key: YOUR_API_KEY" \
 {
   "session_id": "string"
 }
+```
+
+- `session_id` peut être:
+  - l'UUID Gladia de la session (ex: `03e4540b-278a-439d-a288-3ddb6ac44c01`), ou
+  - l'ID interne de la réunion (le champ `id` renvoyé par `GET /meetings`), par exemple:
+
+```json
+[
+  {
+    "id": 7,
+    "user_id": 1,
+    "platform": "google_meet",
+    "native_meeting_id": "xbj-ubib-feg",
+    "constructed_meeting_url": "https://meet.google.com/xbj-ubib-feg",
+    "status": "active",
+    "bot_container_id": "a0c9955dd2208db849f1c6d8f202e9ed928836715a0dfcfa0720881e5a12ef7c",
+    "start_time": "2025-08-04T09:53:32.271961",
+    "end_time": null,
+    "data": {},
+    "created_at": "2025-08-04T09:53:32.089622",
+    "updated_at": "2025-08-04T09:53:32.093324"
+  }
+]
 ```
 
 **Réponse** :
@@ -333,6 +391,8 @@ curl -H "X-API-Key: YOUR_API_KEY" \
   }
 }
 ```
+
+> Note: Ni `GET /meetings` ni `GET /meetings/{meeting_id}` ne renvoient le texte de la transcription. Utilisez cet endpoint `POST /retrieve` (ou un endpoint `/transcripts/...` si actif) pour obtenir le contenu.
 
 **Exemple** :
 
@@ -577,6 +637,16 @@ API_GATEWAY_URL=http://api-gateway:8000
 BOT_MANAGER_URL=http://bot-manager:8080
 ADMIN_API_URL=http://admin-api:8001
 
+# Logs bot (optionnel)
+# Répertoire ABSOLU côté host pour stocker les logs par appel
+BOT_LOGS_HOST_DIR=/absolute/path/on/host/vexa-bot-logs
+LOG_LEVEL=INFO
+
+# Keep-Alive audio (optionnel)
+# Micro-chunk silencieux envoyé toutes les X ms pour garder la session Gladia active
+# 0 = désactivé (par défaut)
+KEEP_ALIVE_INTERVAL_MS=0
+
 # Configuration webhook n8n (optionnel)
 N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/vexa-bot-exit
 ```
@@ -587,9 +657,11 @@ N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/vexa-bot-exit
 
 1. **Limite de bots concurrents** : Chaque utilisateur a une limite configurable de bots simultanés
 2. **Filtrage du silence** : Les chunks audio silencieux sont automatiquement ignorés
-3. **Sessions Gladia** : Chaque bot crée une session Gladia unique pour la transcription
+3. **Sessions Gladia** : Chaque bot crée une session Gladia unique pour la transcription. Un keep-alive audio optionnel
+   peut être activé via `KEEP_ALIVE_INTERVAL_MS` pour éviter des sessions `audio_duration = 0` en cas de longue attente.
 4. **Monitoring temps réel** : Les logs sont mis à jour automatiquement
-5. **Transcriptions persistantes** : Les données sont sauvegardées en base de données
+5. **Transcriptions persistantes** : Les données sont sauvegardées en base de données. Les logs par appel sont stockés
+   sous forme de fichiers si `BOT_LOGS_HOST_DIR` est défini (un fichier par connectionId).
 6. **Endpoints non fonctionnels** : Certains endpoints dépendent du service transcription-collector supprimé
 
 ---

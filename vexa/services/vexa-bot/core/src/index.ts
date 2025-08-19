@@ -1,5 +1,5 @@
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
-import { log } from "./utils";
+import { log, initFileLogger } from "./utils";
 import { chromium } from "playwright-extra";
 import { handleGoogleMeet, leaveGoogleMeet } from "./platforms/google";
 import { browserArgs, userAgent } from "./constans";
@@ -231,6 +231,8 @@ export async function runBot(botConfig: BotConfig): Promise<void> {
   const { meetingUrl, platform, botName } = botConfig;
 
   log(`Starting bot for ${platform} with URL: ${meetingUrl}, name: ${botName}, language: ${currentLanguage}, task: ${currentTask}, connectionId: ${currentConnectionId}`);
+  // Initialize per-call file logging if configured
+  try { initFileLogger(currentConnectionId || undefined); } catch (_) {}
 
   // --- ADDED: Redis Client Setup and Subscription ---
   if (currentRedisUrl && currentConnectionId) {

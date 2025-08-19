@@ -1,14 +1,10 @@
 import { Page } from "playwright";
 import { log, randomDelay } from "../utils";
 import { BotConfig } from "../types";
-import { v4 as uuidv4 } from "uuid"; // Import UUID
+// declare process to satisfy linter environments lacking @types/node during analysis
+declare const process: any;
 
-// --- ADDED: Function to generate UUID (if not already present globally) ---
-// If you have a shared utils file for this, import from there instead.
-function generateUUID() {
-  return uuidv4();
-}
-// --- --------------------------------------------------------- ---
+// (Removed Node-side generateUUID helper; browser context defines its own)
 
 export async function handleGoogleMeet(
   botConfig: BotConfig,
@@ -202,7 +198,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
       };
       // --- --------------------------------------------------------- ---
 
-      await new Promise<void>((resolve, reject) => {
+      await new Promise<void>(async (resolve, reject) => {
         try {
           (window as any).logBot("Starting recording process.");
           
@@ -228,7 +224,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
           };
           // --- END FUNCTION ---
 
-          findMediaElements().then(mediaElements => {
+          findMediaElements().then(async mediaElements => {
             if (mediaElements.length === 0) {
               return reject(
                 new Error(
@@ -242,6 +238,18 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
               `Found ${mediaElements.length} active media elements.`
             );
             const audioContext = new AudioContext();
+            try {
+              (window as any).logBot(`[AudioContext] Initial state: ${audioContext.state}`);
+              if (audioContext.state !== 'running') {
+                audioContext.resume().then(() => {
+                  (window as any).logBot(`[AudioContext] Resumed. Current state: ${audioContext.state}`);
+                }).catch((resumeErr: any) => {
+                  (window as any).logBot(`[AudioContext] Resume failed: ${resumeErr?.message || resumeErr}`);
+                });
+              }
+            } catch (resumeErr: any) {
+              (window as any).logBot(`[AudioContext] Resume failed (outer catch): ${resumeErr?.message || resumeErr}`);
+            }
             const destinationNode = audioContext.createMediaStreamDestination();
             let sourcesConnected = 0;
 
@@ -309,6 +317,9 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             const baseRetryDelay = (configuredInterval && configuredInterval <= 1000) ? configuredInterval : 1000; // Use configured if <= 1s, else 1s
 
             let sessionAudioStartTimeMs: number | null = null; // ADDED: For relative speaker timestamps
+            let audioChunksSentCount: number = 0; // ADDED: Watchdog counter
+            let lastAudioChunkSentAtMs: number = 0; // ADDED: Watchdog timestamp
+            let audioWatchdogIntervalHandle: number | null = null; // ADDED: Watchdog interval handle
 
             let currentGladiaSessionId: string | null = null;
             
@@ -431,6 +442,44 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                       `✅ WebSocket connected to Gladia. Ready to send audio.`
                     );
                   }
+
+                  // Start audio watchdog
+                  if (audioWatchdogIntervalHandle !== null) {
+                    clearInterval(audioWatchdogIntervalHandle);
+                  }
+                  const WATCHDOG_CHECK_MS = 5000;
+                  const NO_AUDIO_INITIAL_GRACE_MS = 15000; // Allow 15s to start sending
+                  const NO_AUDIO_STALL_MS = 30000; // If no audio for 30s, consider stalled
+                  const MIN_PARTICIPANTS_FOR_WATCHDOG = 2; // Only enforce when at least 2 participants
+                  const openedAtMs = Date.now();
+                  audioChunksSentCount = 0;
+                  lastAudioChunkSentAtMs = 0;
+                  audioWatchdogIntervalHandle = window.setInterval(() => {
+                    const now = Date.now();
+                    if (!socket || socket.readyState !== WebSocket.OPEN) {
+                      return; // Nothing to do if not open
+                    }
+                    // Read current participant count from central map
+                    let participantsCount = 0;
+                    try {
+                      participantsCount = (typeof activeParticipants !== 'undefined' && activeParticipants && typeof activeParticipants.size === 'number') ? activeParticipants.size : 0;
+                    } catch (_) { /* ignore */ }
+
+                    if (participantsCount < MIN_PARTICIPANTS_FOR_WATCHDOG) {
+                      // Don't trigger reconnects if fewer than threshold participants
+                      return;
+                    }
+                    const timeSinceOpen = now - openedAtMs;
+                    const timeSinceLastAudio = lastAudioChunkSentAtMs ? (now - lastAudioChunkSentAtMs) : null;
+
+                    if (audioChunksSentCount === 0 && timeSinceOpen > NO_AUDIO_INITIAL_GRACE_MS) {
+                      (window as any).logBot(`[Watchdog] No audio chunks sent in the first ${Math.round(timeSinceOpen/1000)}s after connect. Forcing reconnect.`);
+                      try { socket.close(); } catch (_) {}
+                    } else if (timeSinceLastAudio !== null && timeSinceLastAudio > NO_AUDIO_STALL_MS) {
+                      (window as any).logBot(`[Watchdog] Stalled audio stream (no chunks for ${Math.round(timeSinceLastAudio/1000)}s). Forcing reconnect.`);
+                      try { socket.close(); } catch (_) {}
+                    }
+                  }, WATCHDOG_CHECK_MS);
                 };
 
                 socket.onmessage = (event) => {
@@ -499,6 +548,11 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   if (connectionTimeoutHandle !== null) {
                     clearTimeout(connectionTimeoutHandle);
                     connectionTimeoutHandle = null;
+                  }
+                  // Stop audio watchdog
+                  if (audioWatchdogIntervalHandle !== null) {
+                    clearInterval(audioWatchdogIntervalHandle);
+                    audioWatchdogIntervalHandle = null;
                   }
                   (window as any).logBot(
                     `WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason}`
@@ -1024,6 +1078,8 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             const audioDataCache = [];
             const mediaStream = audioContext.createMediaStreamSource(stream); // Use our combined stream
             const recorder = audioContext.createScriptProcessor(4096, 1, 1);
+            // Optional silent keep-alive timer
+            let keepAliveTimer: number | null = null;
 
             recorder.onaudioprocess = async (event) => {
               // Check if socket is open (Gladia doesn't send "ready" message)
@@ -1083,7 +1139,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 let maxAmplitude = 0;
                 for (let i = 0; i < pcmData.length; i++) {
                     const amplitude = Math.abs(pcmData[i]);
-                    if (amplitude > 100) { // Seuil pour détecter du son
+                    if (amplitude > 40) { // Slightly lower threshold to avoid false silence
                         hasAudio = true;
                     }
                     if (amplitude > maxAmplitude) {
@@ -1095,6 +1151,8 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 if (hasAudio) {
                     socket.send(pcmData.buffer); // send the PCM audio buffer to Gladia socket
                     (window as any).logBot(`🎵 Audio chunk sent: ${pcmData.length} samples (PCM 16-bit) - Max amplitude: ${maxAmplitude} - Has audio: ${hasAudio ? 'YES' : 'NO'}`);
+                    audioChunksSentCount++;
+                    lastAudioChunkSentAtMs = Date.now();
                 } else {
                     (window as any).logBot(`🔇 Silent chunk skipped: ${pcmData.length} samples (PCM 16-bit) - Max amplitude: ${maxAmplitude} - Has audio: ${hasAudio ? 'YES' : 'NO'}`);
                 }
@@ -1111,6 +1169,34 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             (window as any).logBot(
               "Audio processing pipeline connected and sending data silently."
             );
+
+            // Setup optional silent keep-alive if configured
+            try {
+              const keepAliveIntervalMs = (botConfigData as any).keepAliveIntervalMs;
+              if (keepAliveIntervalMs && typeof keepAliveIntervalMs === 'number' && keepAliveIntervalMs > 0) {
+                (window as any).logBot(`[KeepAlive] Enabled. Interval: ${keepAliveIntervalMs}ms`);
+                const sendSilentKeepAlive = () => {
+                  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+                  // Send a tiny near-silent PCM buffer to keep session warm
+                  const length = 320; // ~20ms at 16kHz
+                  const pcmData = new Int16Array(length);
+                  for (let i = 0; i < length; i++) {
+                    pcmData[i] = (i % 2 === 0) ? 1 : -1; // near-silent waveform
+                  }
+                  try {
+                    socket.send(pcmData.buffer);
+                    (window as any).logBot(`[KeepAlive] Sent silent keep-alive chunk (${length} samples).`);
+                  } catch (e: any) {
+                    (window as any).logBot(`[KeepAlive] Error sending keep-alive: ${e?.message || e}`);
+                  }
+                };
+                keepAliveTimer = window.setInterval(sendSilentKeepAlive, keepAliveIntervalMs);
+              } else {
+                (window as any).logBot(`[KeepAlive] Disabled.`);
+              }
+            } catch (e: any) {
+              (window as any).logBot(`[KeepAlive] Setup error: ${e?.message || e}`);
+            }
 
             // Click the "People" button
             const peopleButton = document.querySelector(
@@ -1143,6 +1229,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                        );
                        clearInterval(checkInterval);
                        recorder.disconnect();
+                       if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
                        (window as any).triggerNodeGracefulLeave();
                        resolve(); // Resolve the main promise from page.evaluate
                        return;   // Exit setInterval callback
@@ -1166,6 +1253,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 );
                 clearInterval(checkInterval);
                 recorder.disconnect();
+                if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
                 (window as any).triggerNodeGracefulLeave();
                 resolve();
               } else if (aloneTime > 0) { // Log countdown if timer has started
@@ -1180,6 +1268,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
               (window as any).logBot("Page is unloading. Stopping recorder...");
               clearInterval(checkInterval);
               recorder.disconnect();
+              if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
               (window as any).triggerNodeGracefulLeave();
               resolve();
             });
@@ -1190,6 +1279,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 );
                 clearInterval(checkInterval);
                 recorder.disconnect();
+                if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
                 (window as any).triggerNodeGracefulLeave();
                 resolve();
               }
