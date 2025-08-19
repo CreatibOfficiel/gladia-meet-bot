@@ -1,10 +1,6 @@
 import { Page } from "playwright";
 import { log, randomDelay } from "../utils";
 import { BotConfig } from "../types";
-// declare process to satisfy linter environments lacking @types/node during analysis
-declare const process: any;
-
-// (Removed Node-side generateUUID helper; browser context defines its own)
 
 export async function handleGoogleMeet(
   botConfig: BotConfig,
@@ -180,7 +176,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
         task: initialTask,
       } = botConfigData; // Use the nested botConfigData
 
-      // --- ADD Helper function to generate UUID in browser context ---
+      // Helper function to generate UUID in browser context
       const generateUUID = () => {
         if (typeof crypto !== "undefined" && crypto.randomUUID) {
           return crypto.randomUUID();
@@ -196,13 +192,12 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
           );
         }
       };
-      // --- --------------------------------------------------------- ---
 
       await new Promise<void>(async (resolve, reject) => {
         try {
           (window as any).logBot("Starting recording process.");
           
-          // --- ADDED: More robust media element finding function ---
+          // More robust media element finding function
           const findMediaElements = async (retries = 5, delay = 2000): Promise<HTMLMediaElement[]> => {
             for (let i = 0; i < retries; i++) {
                 const mediaElements = Array.from(
@@ -222,7 +217,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             }
             return [];
           };
-          // --- END FUNCTION ---
 
           findMediaElements().then(async mediaElements => {
             if (mediaElements.length === 0) {
@@ -233,7 +227,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
               );
             }
 
-            // NEW: Create audio context and destination for mixing multiple streams
+            // Create audio context and destination for mixing multiple streams
             (window as any).logBot(
               `Found ${mediaElements.length} active media elements.`
             );
@@ -253,7 +247,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             const destinationNode = audioContext.createMediaStreamDestination();
             let sourcesConnected = 0;
 
-            // NEW: Connect all media elements to the destination node
+            // Connect all media elements to the destination node
             mediaElements.forEach((element: any, index: number) => {
               try {
                 const elementStream =
@@ -296,19 +290,17 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
               `Successfully combined ${sourcesConnected} audio streams.`
             );
 
-            // --- MODIFIED: Keep original connectionId but don't use it for WebSocket UID ---
+            // Keep original connectionId but don't use it for WebSocket UID
             // const sessionUid = connectionId; // <-- OLD: Reused original connectionId
             (window as any).logBot(
               `Original bot connection ID: ${originalConnectionId}`
             );
-            // --- ------------------------------------------------------------------------ ---
 
-            // --- ADDED: Add secondary leave button selector for confirmation ---
+            // Add secondary leave button selector for confirmation
             const secondaryLeaveButtonSelector = `//button[.//span[text()='Leave meeting']] | //button[.//span[text()='Just leave the meeting']]`; // Example, adjust based on actual UI
-            // --- ADD Browser-scope state for current WS config ---
+            // Browser-scope state for current WS config
             let currentWsLanguage = initialLanguage;
             let currentWsTask = initialTask;
-            // --- -------------------------------------------- ---
 
             let socket: WebSocket | null = null;
             let isServerReady = false;
@@ -408,7 +400,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
 
                 socket = new WebSocket(wsUrl);
 
-                // --- NEW: Force-close if connection cannot be established quickly ---
+                // Force-close if connection cannot be established quickly
                 const connectionTimeoutMs = 3000; // 3-second timeout for CONNECTING state
                 let connectionTimeoutHandle: number | null = window.setTimeout(() => {
                   if (socket && socket.readyState === WebSocket.CONNECTING) {
@@ -428,8 +420,8 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                     clearTimeout(connectionTimeoutHandle); // Clear connection watchdog
                     connectionTimeoutHandle = null;
                   }
-                  // --- MODIFIED: Log current config being used ---
-                  // --- MODIFIED: Generate NEW UUID for this connection ---
+                  // Log current config being used
+                  // Generate NEW UUID for this connection
                   currentSessionUid = generateUUID(); // Update the currentSessionUid
                   sessionAudioStartTimeMs = null; // ADDED: Reset for new WebSocket session
                   (window as any).logBot(
@@ -1091,7 +1083,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 return;
               }
 
-              // ADDED: Set sessionAudioStartTimeMs on the first audio chunk for this session
+              // Set sessionAudioStartTimeMs on the first audio chunk for this session
               if (sessionAudioStartTimeMs === null) {
                   sessionAudioStartTimeMs = Date.now();
                   (window as any).logBot(`[RelativeTime] sessionAudioStartTimeMs set for UID ${currentSessionUid}: ${sessionAudioStartTimeMs} (at first audio data process)`);
@@ -1147,7 +1139,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                     }
                 }
                 
-                // Ne pas envoyer les chunks audio si il n'y a pas de son (silence)
+                // Don't send audio chunks if there's no audio (silence)
                 if (hasAudio) {
                     socket.send(pcmData.buffer); // send the PCM audio buffer to Gladia socket
                     (window as any).logBot(`🎵 Audio chunk sent: ${pcmData.length} samples (PCM 16-bit) - Max amplitude: ${maxAmplitude} - Has audio: ${hasAudio ? 'YES' : 'NO'}`);
