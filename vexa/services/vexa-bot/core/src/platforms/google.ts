@@ -314,6 +314,31 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             let audioWatchdogIntervalHandle: number | null = null; // ADDED: Watchdog interval handle
 
             let currentGladiaSessionId: string | null = null;
+            // Helper: structured leave logging without sending any control message to Gladia
+            function logLeave(reason: string, extra: any = {}) {
+              try {
+                let participantIds: any[] = [];
+                try {
+                  // activeParticipants may not be initialized yet
+                  // @ts-ignore
+                  if (typeof activeParticipants !== 'undefined' && activeParticipants && activeParticipants.keys) {
+                    // @ts-ignore
+                    participantIds = Array.from(activeParticipants.keys());
+                  }
+                } catch (_) {}
+                const payload = {
+                  type: 'LEAVING_MEETING',
+                  reason,
+                  uid: currentSessionUid,
+                  ts: Date.now(),
+                  participants: participantIds,
+                  ...extra
+                };
+                (window as any).logBot(`[LEAVE_EVENT] ${JSON.stringify(payload)}`);
+              } catch (e: any) {
+                (window as any).logBot(`[LEAVE_EVENT_ERROR] ${e?.message || e}`);
+              }
+            }
             
             const setupGladiaSession = async () => {
               try {
@@ -357,6 +382,25 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                         audio_enhancer: true,
                         speech_threshold: 0.01, // Seuil ultra-bas
                       },
+                      // Enable diarization in post-processing final results (per Gladia API docs)
+                      post_processing: {
+                        diarization: true,
+                        diarization_config: {
+                          // number_of_speakers, min_speakers, max_speakers, enhanced can be added later if needed
+                        }
+                      },
+                      // Ensure we receive post-processing events on the socket
+                      messages_config: {
+                        receive_partial_transcripts: false,
+                        receive_final_transcripts: true,
+                        receive_speech_events: true,
+                        receive_pre_processing_events: true,
+                        receive_realtime_processing_events: true,
+                        receive_post_processing_events: true,
+                        receive_acknowledgments: true,
+                        receive_errors: true,
+                        receive_lifecycle_events: false
+                      }
                     }),
                   });
 
@@ -819,32 +863,8 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 const participantId = getParticipantId(participantElement);
                 const participantName = getParticipantName(participantElement);
 
-                // Send speaker event via WebSocket if connected
-                if (socket && socket.readyState === WebSocket.OPEN) {
-                    const speakerEventMessage = {
-                        type: "speaker_activity",
-                        payload: {
-                            event_type: eventType,
-                            participant_name: participantName,
-                            participant_id_meet: participantId,
-                            relative_client_timestamp_ms: relativeTimestampMs, // UPDATED
-                            uid: currentSessionUid, // Use the current session UID
-                            token: token,
-                            platform: platform,
-                            meeting_id: nativeMeetingId,
-                            meeting_url: meetingUrl
-                        }
-                    };
-
-                    try {
-                        socket.send(JSON.stringify(speakerEventMessage));
-                        (window as any).logBot(`[RelativeTime] Speaker event sent: ${eventType} for ${participantName} (${participantId}). RelativeTs: ${relativeTimestampMs}ms. UID: ${currentSessionUid}. (AbsoluteEventMs: ${eventAbsoluteTimeMs}, SessionT0Ms: ${sessionAudioStartTimeMs})`);
-                    } catch (error: any) {
-                        (window as any).logBot(`Error sending speaker event: ${error.message}`);
-                    }
-                } else {
-                    (window as any).logBot(`WebSocket not ready, speaker event queued: ${eventType} for ${participantName}`);
-                }
+                // Do not send legacy speaker_activity to Gladia (unsupported). Log locally only.
+                (window as any).logBot(`[RelativeTime] (disabled) speaker_activity ${eventType} for ${participantName} (${participantId}). RelativeTs: ${relativeTimestampMs}ms. UID: ${currentSessionUid}.`);
             }
 
             function logSpeakerEvent(participantElement: HTMLElement, mutatedClassList: DOMTokenList) {
@@ -988,30 +1008,8 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             (window as any).performLeaveAction = async () => {
                 (window as any).logBot("Attempting to leave the meeting from browser context...");
                 
-                // Send LEAVING_MEETING signal before closing WebSocket
-                if (socket && socket.readyState === WebSocket.OPEN) {
-                    try {
-                        const sessionControlMessage = {
-                            type: "session_control",
-                            payload: {
-                                event: "LEAVING_MEETING",
-                                uid: currentSessionUid,
-                                client_timestamp_ms: Date.now(),
-                                token: token,
-                                platform: platform,
-                                meeting_id: nativeMeetingId
-                            }
-                        };
-                        
-                        socket.send(JSON.stringify(sessionControlMessage));
-                        (window as any).logBot("LEAVING_MEETING signal sent to WhisperLive");
-                        
-                        // Wait a brief moment for the message to be sent
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                    } catch (error: any) {
-                        (window as any).logBot(`Error sending LEAVING_MEETING signal: ${error.message}`);
-                    }
-                }
+                // Structured leave log for traceability
+                logLeave('manual_leave_action');
 
                 try {
                     // *** FIXED: Use document.evaluate for XPath ***
@@ -1219,6 +1217,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                        (window as any).logBot(
                           "Participant list container not found (and participant count is 0); assuming meeting ended."
                        );
+                       logLeave('people_list_missing_assume_meeting_ended');
                        clearInterval(checkInterval);
                        recorder.disconnect();
                        if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
@@ -1243,6 +1242,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 (window as any).logBot(
                   "Meeting ended or bot has been alone for 10 seconds. Stopping recorder..."
                 );
+                logLeave('alone_timeout', { alone_seconds: aloneTime });
                 clearInterval(checkInterval);
                 recorder.disconnect();
                 if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
@@ -1258,6 +1258,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             // Listen for unload and visibility changes
             window.addEventListener("beforeunload", () => {
               (window as any).logBot("Page is unloading. Stopping recorder...");
+              logLeave('page_beforeunload');
               clearInterval(checkInterval);
               recorder.disconnect();
               if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
@@ -1269,6 +1270,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 (window as any).logBot(
                   "Document is hidden. Stopping recorder..."
                 );
+                logLeave('document_hidden');
                 clearInterval(checkInterval);
                 recorder.disconnect();
                 if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
