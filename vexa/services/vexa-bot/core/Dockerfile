@@ -26,8 +26,8 @@ COPY . .
 # Build the TypeScript code using tsc
 RUN tsc
 
-# Install Playwright dependencies (if not already installed via npm)
-RUN npx playwright install-deps && npx playwright install --with-deps
+# Install browsers only; skip install-deps to avoid apt GPG issues during build
+RUN npx playwright install || true
 
 # --- Runtime Stage ---
 FROM mcr.microsoft.com/playwright:v1.51.0-jammy AS runtime
