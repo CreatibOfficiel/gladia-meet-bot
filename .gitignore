@@ -1,3 +1,6 @@
+# Local secrets / VPS credentials (do not commit)
+vps_data.md
+
 # Vexa Bot Platform - .gitignore
 
 # ===========================================
