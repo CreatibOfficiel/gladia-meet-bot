@@ -198,7 +198,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
           (window as any).logBot("Starting recording process.");
           
           // More robust media element finding function
-          const findMediaElements = async (retries = 5, delay = 2000): Promise<HTMLMediaElement[]> => {
+          const findMediaElements = async (retries = 30, delay = 2000): Promise<HTMLMediaElement[]> => {
             for (let i = 0; i < retries; i++) {
                 const mediaElements = Array.from(
                     document.querySelectorAll("audio, video")
@@ -220,11 +220,16 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
 
           findMediaElements().then(async mediaElements => {
             if (mediaElements.length === 0) {
-              return reject(
-                new Error(
-                  "[BOT Error] No active media elements found after multiple retries. Ensure the meeting media is playing."
-                )
-              );
+              (window as any).logBot("[Audio] Still no media elements after extended wait. Deferring initialization until audio appears.");
+              const waitAgainMs = 5000;
+              setTimeout(async () => {
+                const recheck = await findMediaElements();
+                if (recheck.length === 0) {
+                  (window as any).logBot("[Audio] Media still unavailable. Will continue monitoring participants and retry later.");
+                } else {
+                  (window as any).logBot(`[Audio] Media became available: ${recheck.length} element(s). Proceeding.`);
+                }
+              }, waitAgainMs);
             }
 
             // Create audio context and destination for mixing multiple streams
@@ -306,7 +311,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             let isServerReady = false;
             let retryCount = 0;
             const configuredInterval = botConfigData.reconnectionIntervalMs;
-            const baseRetryDelay = (configuredInterval && configuredInterval <= 1000) ? configuredInterval : 1000; // Use configured if <= 1s, else 1s
+            const baseRetryDelay = (configuredInterval && configuredInterval >= 1000) ? configuredInterval : 2000; // Default 2s if not set
 
             let sessionAudioStartTimeMs: number | null = null; // ADDED: For relative speaker timestamps
             let audioChunksSentCount: number = 0; // ADDED: Watchdog counter
@@ -444,20 +449,8 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
 
                 socket = new WebSocket(wsUrl);
 
-                // Force-close if connection cannot be established quickly
-                const connectionTimeoutMs = 3000; // 3-second timeout for CONNECTING state
-                let connectionTimeoutHandle: number | null = window.setTimeout(() => {
-                  if (socket && socket.readyState === WebSocket.CONNECTING) {
-                    (window as any).logBot(
-                      `Connection attempt timed out after ${connectionTimeoutMs}ms. Forcing close.`
-                    );
-                    try {
-                      socket.close(); // Triggers onclose -> retry logic
-                    } catch (_) {
-                      /* ignore */
-                    }
-                  }
-                }, connectionTimeoutMs);
+                // Disable aggressive CONNECTING watchdog to avoid flapping
+                let connectionTimeoutHandle: number | null = null;
 
                 socket.onopen = function () {
                   if (connectionTimeoutHandle !== null) {
@@ -605,8 +598,9 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                     return;
                   }
                   
+                  const delay = Math.min(30000, baseRetryDelay * Math.pow(2, retryCount - 1));
                   (window as any).logBot(
-                    `Attempting to reconnect in ${baseRetryDelay}ms. Retry attempt ${retryCount}/${maxRetries}`
+                    `Attempting to reconnect in ${delay}ms. Retry attempt ${retryCount}/${maxRetries}`
                   );
 
                   setTimeout(async () => {
@@ -614,7 +608,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                       `Retrying WebSocket connection (attempt ${retryCount}/${maxRetries})...`
                     );
                     await setupGladiaSession();
-                  }, baseRetryDelay);
+                  }, delay);
                 };
               } catch (e: any) {
                 (window as any).logBot(`Error creating WebSocket: ${e.message}`);
@@ -629,8 +623,9 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   return;
                 }
                 
+                const delay = Math.min(30000, baseRetryDelay * Math.pow(2, retryCount - 1));
                 (window as any).logBot(
-                  `Error during WebSocket setup. Attempting to reconnect in ${baseRetryDelay}ms. Retry attempt ${retryCount}/${maxRetries}`
+                  `Error during WebSocket setup. Attempting to reconnect in ${delay}ms. Retry attempt ${retryCount}/${maxRetries}`
                 );
 
                 setTimeout(async () => {
@@ -638,7 +633,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                     `Retrying WebSocket connection (attempt ${retryCount}/${maxRetries})...`
                   );
                   await setupGladiaSession();
-                }, baseRetryDelay);
+                }, delay);
               }
             };
 
@@ -1203,7 +1198,9 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             (peopleButton as HTMLElement).click();
 
             // Monitor participant list every 5 seconds
-            let aloneTime = 0;
+            let aloneTime = 0; // legacy variable, no longer used for leaving
+            let noParticipantsMs = 0;
+            const everyoneLeftTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.everyoneLeftTimeout ? (botConfigData as any).automaticLeave.everyoneLeftTimeout : 60000;
             const checkInterval = setInterval(() => {
               // UPDATED: Use the size of our central map as the source of truth
               const count = activeParticipants.size;
@@ -1227,31 +1224,24 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   }
               }
 
-              // FIXED: Correct logic for tracking alone time
-              if (count <= 1) { // Bot is 1, so count <= 1 means bot is alone
-                aloneTime += 5; // It's a 5-second interval
-              } else {
-                // Someone else is here, so reset the timer.
-                if (aloneTime > 0) {
-                    (window as any).logBot('Another participant joined. Resetting alone timer.');
+              // New logic: leave only when no participants remain for configured timeout
+              if (count === 0) {
+                noParticipantsMs += 5000;
+                (window as any).logBot(`[Participants] No participants. Accumulated: ${noParticipantsMs}ms / threshold ${everyoneLeftTimeoutMs}ms`);
+                if (noParticipantsMs >= everyoneLeftTimeoutMs) {
+                  (window as any).logBot("No participants for configured timeout. Leaving meeting...");
+                  logLeave('no_participants_timeout', { duration_ms: noParticipantsMs });
+                  clearInterval(checkInterval);
+                  recorder.disconnect();
+                  if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
+                  (window as any).triggerNodeGracefulLeave();
+                  resolve();
                 }
-                aloneTime = 0;
-              }
-
-              if (aloneTime >= 10) { // If bot has been alone for 10 seconds...
-                (window as any).logBot(
-                  "Meeting ended or bot has been alone for 10 seconds. Stopping recorder..."
-                );
-                logLeave('alone_timeout', { alone_seconds: aloneTime });
-                clearInterval(checkInterval);
-                recorder.disconnect();
-                if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
-                (window as any).triggerNodeGracefulLeave();
-                resolve();
-              } else if (aloneTime > 0) { // Log countdown if timer has started
-                 (window as any).logBot(
-                  `Bot has been alone for ${aloneTime} seconds. Will leave in ${10 - aloneTime} more seconds.`
-                );
+              } else {
+                if (noParticipantsMs > 0) {
+                  (window as any).logBot('[Participants] Someone present. Resetting no-participants timer.');
+                }
+                noParticipantsMs = 0;
               }
             }, 5000);
 

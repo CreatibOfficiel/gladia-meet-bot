@@ -174,13 +174,22 @@ def get_bot_logs():
                         if not api_key:
                             raise Exception("API_KEY not found in environment")
                         
+                        # Ensure meeting_id is an integer; otherwise skip to avoid 422 spam
                         app.logger.info(f"Fetching meeting data for ID: {meeting_id}")
-                        response = requests.get(f"http://api-gateway:8000/meetings/{meeting_id}", 
+                        try:
+                            int_meeting_id = int(str(meeting_id))
+                        except ValueError:
+                            app.logger.warning(f"Skipping meeting fetch: non-integer meeting_id '{meeting_id}'")
+                            int_meeting_id = None
+
+                        response = None
+                        if int_meeting_id is not None:
+                            response = requests.get(f"http://api-gateway:8000/meetings/{int_meeting_id}", 
                                               headers={"X-API-Key": api_key}, 
                                               timeout=5)
-                        app.logger.info(f"Response status: {response.status_code}")
+                            app.logger.info(f"Response status: {response.status_code}")
                         
-                        if response.status_code == 200:
+                        if response is not None and response.status_code == 200:
                             meeting_data = response.json()
                             app.logger.info(f"Meeting data: {meeting_data}")
                             real_meeting_id = meeting_data.get('platform_specific_id', 'Unknown')
@@ -192,7 +201,7 @@ def get_bot_logs():
                                 bot['gladia_session'] = gladia_session_id
                             else:
                                 bot['gladia_session'] = "Not found"
-                        else:
+                        elif response is not None:
                             app.logger.error(f"API returned status {response.status_code}: {response.text}")
                     except Exception as e:
                         app.logger.error(f"Error fetching meeting data: {e}")
