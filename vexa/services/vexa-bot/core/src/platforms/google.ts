@@ -74,6 +74,7 @@ const waitForMeetingAdmission = async (
   const pollIntervalMs = 1000;
   const reaskIntervalMs = 30000;
   let lastReaskAt = 0;
+  let pollCount = 0;
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
@@ -110,6 +111,13 @@ const waitForMeetingAdmission = async (
         return { admitted, hasAskToJoin, canReask: !!askToJoinBtn };
       }, { leaveXpath: leaveButtonSelector });
 
+      // Node-side structured logging every 5 polls to avoid flooding
+      pollCount++;
+      if (pollCount % 5 === 0) {
+        const elapsedSec = Math.round((Date.now() - start) / 1000);
+        log(`[AdmissionWait] admitted=${state.admitted} hasAskToJoin=${state.hasAskToJoin} canReask=${state.canReask} elapsed=${elapsedSec}s`);
+      }
+
       if (state.admitted) {
         log("Successfully admitted to the meeting (audio detected).");
         return true;
@@ -134,6 +142,8 @@ const waitForMeetingAdmission = async (
       await page.waitForTimeout(pollIntervalMs);
     }
   }
+  const totalElapsedSec = Math.round((Date.now() - start) / 1000);
+  log(`[AdmissionWait] Timeout reached without admission after ${totalElapsedSec}s. Failing with admission timeout.`);
   throw new Error("Bot was not admitted into the meeting within the timeout period");
 };
 
