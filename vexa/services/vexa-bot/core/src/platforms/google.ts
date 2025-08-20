@@ -1261,7 +1261,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             let noParticipantsMs = 0;
             let aloneWithBotMs = 0;
             const everyoneLeftTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.everyoneLeftTimeout ? (botConfigData as any).automaticLeave.everyoneLeftTimeout : 60000;
-            const aloneTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.noOneJoinedTimeout ? (botConfigData as any).automaticLeave.noOneJoinedTimeout : 60000;
+            const aloneTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.noOneJoinedTimeout ? (botConfigData as any).automaticLeave.noOneJoinedTimeout : 5000;
             const checkInterval = setInterval(() => {
               // UPDATED: Use the size of our central map as the source of truth
               const count = activeParticipants.size;
