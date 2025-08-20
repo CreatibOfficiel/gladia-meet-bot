@@ -72,10 +72,12 @@ const waitForMeetingAdmission = async (
   timeoutMs: number
 ): Promise<boolean> => {
   const pollIntervalMs = 1000;
+  const reaskIntervalMs = 30000;
+  let lastReaskAt = 0;
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
-      const inCall = await page.evaluate((args) => {
+      const state = await page.evaluate((args) => {
         const leaveBtn = document.evaluate(
           args.leaveXpath,
           document,
@@ -84,20 +86,11 @@ const waitForMeetingAdmission = async (
           null
         ).singleNodeValue as HTMLElement | null;
 
-        // Pre-join controls typically include an Ask to join / Join now button
-        const askToJoinBtn = document.querySelector(
-          'button span,button'
-        );
-        const hasAskToJoin = !!Array.from(document.querySelectorAll('button span'))
-          .some((el) => /ask to join|join now/i.test(el.textContent || ''))
-          || !!Array.from(document.querySelectorAll('button'))
-          .some((el) => /ask to join|join now/i.test(el.textContent || ''));
+        // Detect presence of pre-join Ask to join button (EN/FR common cases)
+        const hasAskToJoin = !!Array.from(document.querySelectorAll('button, button span'))
+          .some((el) => /ask to join|join now|demander à participer/i.test((el.textContent || '').trim()));
 
-        // In-call toolbar hints
-        const micToggle = document.querySelector('[aria-label*="Turn off microphone"], [aria-label*="Unmute microphone"], [aria-label*="Microphone"]');
-        const peopleBtn = document.querySelector('button[aria-label^="People"]');
-
-        // Active media with audio tracks
+        // Active media with audio tracks is the strongest admission signal
         const hasAudioMedia = Array.from(document.querySelectorAll('audio, video')).some((el: any) => {
           try {
             return (
@@ -108,19 +101,36 @@ const waitForMeetingAdmission = async (
           } catch { return false; }
         });
 
-        // Consider admitted if: leave button exists AND no Ask to join visible AND (mic/people UI present OR audio detected)
-        const admitted = !!leaveBtn && !hasAskToJoin && (!!micToggle || !!peopleBtn || hasAudioMedia);
-        return { admitted, hasAskToJoin };
+        const admitted = !!leaveBtn && hasAudioMedia; // require media to avoid false positives in waiting room
+
+        // Try to find a clickable Ask to join button (EN/FR)
+        const askToJoinBtn = Array.from(document.querySelectorAll('button'))
+          .find((btn) => /ask to join|join now|demander à participer/i.test((btn.textContent || '').trim())) as HTMLButtonElement | undefined;
+
+        return { admitted, hasAskToJoin, canReask: !!askToJoinBtn };
       }, { leaveXpath: leaveButtonSelector });
 
-      if (inCall.admitted) {
-        log("Successfully admitted to the meeting (confirmed in-call UI).");
+      if (state.admitted) {
+        log("Successfully admitted to the meeting (audio detected).");
         return true;
       }
-      // Still waiting; small delay
+
+      // If we are still waiting and the Ask to join button is present again, re-click periodically
+      const now = Date.now();
+      if (state.canReask && now - lastReaskAt > reaskIntervalMs) {
+        lastReaskAt = now;
+        try {
+          await page.evaluate(() => {
+            const btn = Array.from(document.querySelectorAll('button'))
+              .find((b) => /ask to join|join now|demander à participer/i.test((b.textContent || '').trim())) as HTMLButtonElement | undefined;
+            btn?.click();
+          });
+          log("Re-clicked 'Ask to join' to keep the request active.");
+        } catch (_) { /* ignore */ }
+      }
+
       await page.waitForTimeout(pollIntervalMs);
-    } catch (e) {
-      // Ignore transient evaluation errors and continue polling
+    } catch (_) {
       await page.waitForTimeout(pollIntervalMs);
     }
   }
