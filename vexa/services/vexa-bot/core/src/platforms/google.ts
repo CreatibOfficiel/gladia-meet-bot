@@ -65,21 +65,66 @@ export async function handleGoogleMeet(
   }
 }
 
-// New function to wait for meeting admission
+// Improved: wait for a real in-call state (not just any button)
 const waitForMeetingAdmission = async (
   page: Page,
-  leaveButton: string,
-  timeout: number
+  leaveButtonSelector: string,
+  timeoutMs: number
 ): Promise<boolean> => {
-  try {
-    await page.waitForSelector(leaveButton, { timeout });
-    log("Successfully admitted to the meeting");
-    return true;
-  } catch {
-    throw new Error(
-      "Bot was not admitted into the meeting within the timeout period"
-    );
+  const pollIntervalMs = 1000;
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const inCall = await page.evaluate((args) => {
+        const leaveBtn = document.evaluate(
+          args.leaveXpath,
+          document,
+          null,
+          XPathResult.FIRST_ORDERED_NODE_TYPE,
+          null
+        ).singleNodeValue as HTMLElement | null;
+
+        // Pre-join controls typically include an Ask to join / Join now button
+        const askToJoinBtn = document.querySelector(
+          'button span,button'
+        );
+        const hasAskToJoin = !!Array.from(document.querySelectorAll('button span'))
+          .some((el) => /ask to join|join now/i.test(el.textContent || ''))
+          || !!Array.from(document.querySelectorAll('button'))
+          .some((el) => /ask to join|join now/i.test(el.textContent || ''));
+
+        // In-call toolbar hints
+        const micToggle = document.querySelector('[aria-label*="Turn off microphone"], [aria-label*="Unmute microphone"], [aria-label*="Microphone"]');
+        const peopleBtn = document.querySelector('button[aria-label^="People"]');
+
+        // Active media with audio tracks
+        const hasAudioMedia = Array.from(document.querySelectorAll('audio, video')).some((el: any) => {
+          try {
+            return (
+              !el.paused &&
+              el.srcObject instanceof MediaStream &&
+              (el.srcObject as MediaStream).getAudioTracks().length > 0
+            );
+          } catch { return false; }
+        });
+
+        // Consider admitted if: leave button exists AND no Ask to join visible AND (mic/people UI present OR audio detected)
+        const admitted = !!leaveBtn && !hasAskToJoin && (!!micToggle || !!peopleBtn || hasAudioMedia);
+        return { admitted, hasAskToJoin };
+      }, { leaveXpath: leaveButtonSelector });
+
+      if (inCall.admitted) {
+        log("Successfully admitted to the meeting (confirmed in-call UI).");
+        return true;
+      }
+      // Still waiting; small delay
+      await page.waitForTimeout(pollIntervalMs);
+    } catch (e) {
+      // Ignore transient evaluation errors and continue polling
+      await page.waitForTimeout(pollIntervalMs);
+    }
   }
+  throw new Error("Bot was not admitted into the meeting within the timeout period");
 };
 
 // Prepare for recording by exposing necessary functions
