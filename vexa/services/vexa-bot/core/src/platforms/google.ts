@@ -432,13 +432,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                         audio_enhancer: true,
                         speech_threshold: 0.01, // Seuil ultra-bas
                       },
-                      // Enable diarization in post-processing final results (per Gladia API docs)
-                      post_processing: {
-                        diarization: true,
-                        diarization_config: {
-                          // number_of_speakers, min_speakers, max_speakers, enhanced can be added later if needed
-                        }
-                      },
+                      // Remove diarization config (Gladia rejects post_processing.diarization on /v2/live)
                       // Ensure we receive post-processing events on the socket
                       messages_config: {
                         receive_partial_transcripts: false,
@@ -1245,7 +1239,9 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             // Monitor participant list every 5 seconds
             let aloneTime = 0; // legacy variable, no longer used for leaving
             let noParticipantsMs = 0;
+            let aloneWithBotMs = 0;
             const everyoneLeftTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.everyoneLeftTimeout ? (botConfigData as any).automaticLeave.everyoneLeftTimeout : 60000;
+            const aloneTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.noOneJoinedTimeout ? (botConfigData as any).automaticLeave.noOneJoinedTimeout : 60000;
             const checkInterval = setInterval(() => {
               // UPDATED: Use the size of our central map as the source of truth
               const count = activeParticipants.size;
@@ -1269,7 +1265,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   }
               }
 
-              // New logic: leave only when no participants remain for configured timeout
+              // Leave when no participants remain for configured timeout
               if (count === 0) {
                 noParticipantsMs += 5000;
                 (window as any).logBot(`[Participants] No participants. Accumulated: ${noParticipantsMs}ms / threshold ${everyoneLeftTimeoutMs}ms`);
@@ -1282,11 +1278,24 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   (window as any).triggerNodeGracefulLeave();
                   resolve();
                 }
+              } else if (count <= 1) { // Only the bot remains
+                aloneWithBotMs += 5000;
+                (window as any).logBot(`[Participants] Alone with bot. Accumulated: ${aloneWithBotMs}ms / threshold ${aloneTimeoutMs}ms`);
+                if (aloneWithBotMs >= aloneTimeoutMs) {
+                  (window as any).logBot("Alone with bot for configured timeout. Leaving meeting...");
+                  logLeave('alone_with_bot_timeout', { duration_ms: aloneWithBotMs });
+                  clearInterval(checkInterval);
+                  recorder.disconnect();
+                  if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
+                  (window as any).triggerNodeGracefulLeave();
+                  resolve();
+                }
               } else {
                 if (noParticipantsMs > 0) {
                   (window as any).logBot('[Participants] Someone present. Resetting no-participants timer.');
                 }
                 noParticipantsMs = 0;
+                aloneWithBotMs = 0;
               }
             }, 5000);
 
