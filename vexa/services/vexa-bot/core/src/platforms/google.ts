@@ -65,86 +65,21 @@ export async function handleGoogleMeet(
   }
 }
 
-// Improved: wait for a real in-call state (not just any button)
+// New function to wait for meeting admission
 const waitForMeetingAdmission = async (
   page: Page,
-  leaveButtonSelector: string,
-  timeoutMs: number
+  leaveButton: string,
+  timeout: number
 ): Promise<boolean> => {
-  const pollIntervalMs = 1000;
-  const reaskIntervalMs = 30000;
-  let lastReaskAt = 0;
-  let pollCount = 0;
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const state = await page.evaluate((args) => {
-        const leaveBtn = document.evaluate(
-          args.leaveXpath,
-          document,
-          null,
-          XPathResult.FIRST_ORDERED_NODE_TYPE,
-          null
-        ).singleNodeValue as HTMLElement | null;
-
-        // Detect presence of pre-join Ask to join button (EN/FR common cases)
-        const hasAskToJoin = !!Array.from(document.querySelectorAll('button, button span'))
-          .some((el) => /ask to join|join now|demander à participer/i.test((el.textContent || '').trim()));
-
-        // Active media with audio tracks is the strongest admission signal
-        const hasAudioMedia = Array.from(document.querySelectorAll('audio, video')).some((el: any) => {
-          try {
-            return (
-              !el.paused &&
-              el.srcObject instanceof MediaStream &&
-              (el.srcObject as MediaStream).getAudioTracks().length > 0
-            );
-          } catch { return false; }
-        });
-
-        const admitted = !!leaveBtn && hasAudioMedia; // require media to avoid false positives in waiting room
-
-        // Try to find a clickable Ask to join button (EN/FR)
-        const askToJoinBtn = Array.from(document.querySelectorAll('button'))
-          .find((btn) => /ask to join|join now|demander à participer/i.test((btn.textContent || '').trim())) as HTMLButtonElement | undefined;
-
-        return { admitted, hasAskToJoin, canReask: !!askToJoinBtn };
-      }, { leaveXpath: leaveButtonSelector });
-
-      // Node-side structured logging every 5 polls to avoid flooding
-      pollCount++;
-      if (pollCount % 5 === 0) {
-        const elapsedSec = Math.round((Date.now() - start) / 1000);
-        log(`[AdmissionWait] admitted=${state.admitted} hasAskToJoin=${state.hasAskToJoin} canReask=${state.canReask} elapsed=${elapsedSec}s`);
-      }
-
-      if (state.admitted) {
-        log("Successfully admitted to the meeting (audio detected).");
-        return true;
-      }
-
-      // If we are still waiting and the Ask to join button is present again, re-click periodically
-      const now = Date.now();
-      if (state.canReask && now - lastReaskAt > reaskIntervalMs) {
-        lastReaskAt = now;
-        try {
-          await page.evaluate(() => {
-            const btn = Array.from(document.querySelectorAll('button'))
-              .find((b) => /ask to join|join now|demander à participer/i.test((b.textContent || '').trim())) as HTMLButtonElement | undefined;
-            btn?.click();
-          });
-          log("Re-clicked 'Ask to join' to keep the request active.");
-        } catch (_) { /* ignore */ }
-      }
-
-      await page.waitForTimeout(pollIntervalMs);
-    } catch (_) {
-      await page.waitForTimeout(pollIntervalMs);
-    }
+  try {
+    await page.waitForSelector(leaveButton, { timeout });
+    log("Successfully admitted to the meeting");
+    return true;
+  } catch {
+    throw new Error(
+      "Bot was not admitted into the meeting within the timeout period"
+    );
   }
-  const totalElapsedSec = Math.round((Date.now() - start) / 1000);
-  log(`[AdmissionWait] Timeout reached without admission after ${totalElapsedSec}s. Failing with admission timeout.`);
-  throw new Error("Bot was not admitted into the meeting within the timeout period");
 };
 
 // Prepare for recording by exposing necessary functions
