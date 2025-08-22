@@ -111,8 +111,47 @@ const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
   const muteButton = '[aria-label*="Turn off microphone"]';
   const cameraOffButton = '[aria-label*="Turn off camera"]';
 
+  // Inject anti-detection code using addInitScript
+  await page.addInitScript(() => {
+    // Disable navigator.webdriver to avoid detection
+    Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+
+    // Override navigator.plugins to simulate real plugins
+    Object.defineProperty(navigator, "plugins", {
+      get: () => [
+        { name: "Chrome PDF Plugin" },
+        { name: "Chrome PDF Viewer" },
+        { name: "Native Client" },
+      ],
+    });
+
+    // Override navigator.languages to simulate real languages
+    Object.defineProperty(navigator, "languages", {
+      get: () => ["en-US", "en"],
+    });
+
+    // Override other properties to simulate real browser
+    Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 4 });
+    Object.defineProperty(navigator, "deviceMemory", { get: () => 8 });
+    Object.defineProperty(navigator, "platform", { get: () => "Win32" });
+    
+    // Override screen properties
+    Object.defineProperty(screen, "width", { get: () => 1920 });
+    Object.defineProperty(screen, "height", { get: () => 1080 });
+    Object.defineProperty(screen, "availWidth", { get: () => 1920 });
+    Object.defineProperty(screen, "availHeight", { get: () => 1040 });
+  });
+
   await page.goto(meetingUrl, { waitUntil: "networkidle" });
   await page.bringToFront();
+
+  // Simulate human-like mouse movements
+  await page.mouse.move(10, 372);
+  await page.mouse.move(102, 572);
+  await page.mouse.move(114, 672);
+  await page.waitForTimeout(300);
+  await page.mouse.move(114, 100);
+  await page.mouse.click(100, 100);
 
   // Add a longer, fixed wait after navigation for page elements to settle
   log("Waiting for page elements to settle after navigation...");
