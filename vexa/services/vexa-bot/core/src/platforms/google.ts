@@ -2,6 +2,7 @@ import { Page } from "playwright";
 import { log, randomDelay } from "../utils";
 import { BotConfig } from "../types";
 import { retryActionWithWait } from "../utils/resilience";
+import { takeRetryFailureScreenshot, takeDebugScreenshot } from "../utils/debug";
 
 export async function handleGoogleMeet(
   botConfig: BotConfig,
@@ -89,8 +90,11 @@ const waitForMeetingAdmission = async (
   try {
     await page.waitForSelector(leaveButton, { timeout });
     log("Successfully admitted to the meeting");
+    await takeDebugScreenshot(page, "successfully-admitted", "meeting_admitted");
     return true;
   } catch {
+    log("Failed to get admitted - taking screenshot for debug");
+    await takeDebugScreenshot(page, "admission-failed", "admission_timeout");
     throw new Error(
       "Bot was not admitted into the meeting within the timeout period"
     );
@@ -165,7 +169,8 @@ const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
     "Waiting for the input field",
     async () => await page.waitForSelector(enterNameField, { timeout: 30000 }),
     3,
-    15000
+    15000,
+    async () => await takeRetryFailureScreenshot(page, "waiting-for-input-field")
   );
   log("Name input field found.");
 
@@ -195,7 +200,8 @@ const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
       await page.click(joinButton);
     },
     3,
-    10000
+    10000,
+    async () => await takeRetryFailureScreenshot(page, "clicking-ask-to-join")
   );
   log(`${botName} requested to join the Meeting.`);
 };
