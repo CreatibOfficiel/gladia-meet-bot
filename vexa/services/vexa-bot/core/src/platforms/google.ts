@@ -1,6 +1,7 @@
 import { Page } from "playwright";
 import { log, randomDelay } from "../utils";
 import { BotConfig } from "../types";
+import { retryActionWithWait } from "../utils/resilience";
 
 export async function handleGoogleMeet(
   botConfig: BotConfig,
@@ -26,24 +27,18 @@ export async function handleGoogleMeet(
     return;
   }
 
-  // Setup websocket connection and meeting admission concurrently
-  log("Starting WebSocket connection while waiting for meeting admission");
+  // Wait for admission first, then setup recording - like ScreenApp
+  log("Waiting for meeting admission");
   try {
-    // Run both processes concurrently
-    const [isAdmitted] = await Promise.all([
-      // Wait for admission to the meeting
-      waitForMeetingAdmission(
-        page,
-        leaveButton,
-        botConfig.automaticLeave.waitingRoomTimeout
-      ).catch((error) => {
-        log("Meeting admission failed: " + error.message);
-        return false;
-      }),
-
-      // Prepare for recording (expose functions, etc.) while waiting for admission
-      prepareForRecording(page),
-    ]);
+    // Wait for admission to the meeting FIRST
+    const isAdmitted = await waitForMeetingAdmission(
+      page,
+      leaveButton,
+      botConfig.automaticLeave.waitingRoomTimeout
+    ).catch((error) => {
+      log("Meeting admission failed: " + error.message);
+      return false;
+    });
 
     if (!isAdmitted) {
       console.error("Bot was not admitted into the meeting");
@@ -53,7 +48,27 @@ export async function handleGoogleMeet(
       return; 
     }
 
-    log("Successfully admitted to the meeting, starting recording");
+    log("Successfully admitted to the meeting, preparing for recording");
+    // Retry prepareForRecording with backoff if it fails
+    const maxRetries = 3;
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        await prepareForRecording(page);
+        log("Recording preparation successful");
+        break; // Success
+      } catch (error: any) {
+        log(`prepareForRecording failed (attempt ${i + 1}/${maxRetries}): ${error.message}`);
+        if (i === maxRetries - 1) {
+          log("Failed to prepare recording after all retries. Leaving meeting.");
+          await gracefulLeaveFunction(page, 3, "prepare_recording_failed");
+          return;
+        }
+        log(`Retrying prepareForRecording in 2 seconds...`);
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
+      }
+    }
+    
+    log("Starting recording");
     // Pass platform from botConfig to startRecording
     await startRecording(page, botConfig);
   } catch (error: any) {
@@ -103,12 +118,16 @@ const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
   log("Waiting for page elements to settle after navigation...");
   await page.waitForTimeout(5000); // Wait 5 seconds
 
-  // Enter name and join
-  // Keep the random delay before interacting, but ensure page is settled first
+  // Enter name and join with retry
   await page.waitForTimeout(randomDelay(1000));
   log("Attempting to find name input field...");
-  // Increase timeout drastically
-  await page.waitForSelector(enterNameField, { timeout: 120000 }); // 120 seconds
+  
+  await retryActionWithWait(
+    "Waiting for the input field",
+    async () => await page.waitForSelector(enterNameField, { timeout: 30000 }),
+    3,
+    15000
+  );
   log("Name input field found.");
 
   await page.waitForTimeout(randomDelay(1000));
@@ -130,9 +149,16 @@ const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
     log("Camera already off or not found.");
   }
 
-  await page.waitForSelector(joinButton, { timeout: 60000 });
-  await page.click(joinButton);
-  log(`${botName} joined the Meeting.`);
+  await retryActionWithWait(
+    "Clicking the Ask to join button",
+    async () => {
+      await page.waitForSelector(joinButton, { timeout: 30000 });
+      await page.click(joinButton);
+    },
+    3,
+    10000
+  );
+  log(`${botName} requested to join the Meeting.`);
 };
 
 // Modified to have only the actual recording functionality
@@ -466,43 +492,9 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                     );
                   }
 
-                  // Start audio watchdog
-                  if (audioWatchdogIntervalHandle !== null) {
-                    clearInterval(audioWatchdogIntervalHandle);
-                  }
-                  const WATCHDOG_CHECK_MS = 5000;
-                  const NO_AUDIO_INITIAL_GRACE_MS = 15000; // Allow 15s to start sending
-                  const NO_AUDIO_STALL_MS = 30000; // If no audio for 30s, consider stalled
-                  const MIN_PARTICIPANTS_FOR_WATCHDOG = 2; // Only enforce when at least 2 participants
-                  const openedAtMs = Date.now();
+                  // Audio watchdog removed to prevent premature disconnections
                   audioChunksSentCount = 0;
                   lastAudioChunkSentAtMs = 0;
-                  audioWatchdogIntervalHandle = window.setInterval(() => {
-                    const now = Date.now();
-                    if (!socket || socket.readyState !== WebSocket.OPEN) {
-                      return; // Nothing to do if not open
-                    }
-                    // Read current participant count from central map
-                    let participantsCount = 0;
-                    try {
-                      participantsCount = (typeof activeParticipants !== 'undefined' && activeParticipants && typeof activeParticipants.size === 'number') ? activeParticipants.size : 0;
-                    } catch (_) { /* ignore */ }
-
-                    if (participantsCount < MIN_PARTICIPANTS_FOR_WATCHDOG) {
-                      // Don't trigger reconnects if fewer than threshold participants
-                      return;
-                    }
-                    const timeSinceOpen = now - openedAtMs;
-                    const timeSinceLastAudio = lastAudioChunkSentAtMs ? (now - lastAudioChunkSentAtMs) : null;
-
-                    if (audioChunksSentCount === 0 && timeSinceOpen > NO_AUDIO_INITIAL_GRACE_MS) {
-                      (window as any).logBot(`[Watchdog] No audio chunks sent in the first ${Math.round(timeSinceOpen/1000)}s after connect. Forcing reconnect.`);
-                      try { socket.close(); } catch (_) {}
-                    } else if (timeSinceLastAudio !== null && timeSinceLastAudio > NO_AUDIO_STALL_MS) {
-                      (window as any).logBot(`[Watchdog] Stalled audio stream (no chunks for ${Math.round(timeSinceLastAudio/1000)}s). Forcing reconnect.`);
-                      try { socket.close(); } catch (_) {}
-                    }
-                  }, WATCHDOG_CHECK_MS);
                 };
 
                 socket.onmessage = (event) => {
@@ -1197,27 +1189,89 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             let aloneWithBotMs = 0;
             const everyoneLeftTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.everyoneLeftTimeout ? (botConfigData as any).automaticLeave.everyoneLeftTimeout : 60000;
             const aloneTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.noOneJoinedTimeout ? (botConfigData as any).automaticLeave.noOneJoinedTimeout : 5000;
-            const checkInterval = setInterval(() => {
-              // UPDATED: Use the size of our central map as the source of truth
-              const count = activeParticipants.size;
-              const participantIds = Array.from(activeParticipants.keys());
-              (window as any).logBot(`Participant check: Found ${count} unique participants from central list. IDs: ${JSON.stringify(participantIds)}`);
+            // Enhanced participant detection with failure resilience like ScreenApp
+            let detectionFailures = 0;
+            const maxDetectionFailures = 10; // Track up to 10 consecutive failures
+            
+            // Check if we're still on a valid Google Meet page (inspired by ScreenApp)
+            const isOnValidGoogleMeetPage = () => {
+              try {
+                // Check if we're still on a Google Meet URL
+                const currentUrl = window.location.href;
+                if (!currentUrl.includes('meet.google.com')) {
+                  (window as any).logBot('No longer on Google Meet page - URL changed to: ' + currentUrl);
+                  return false;
+                }
 
-              // If count is 0, it could mean everyone left, OR the participant list area itself is gone.
-              if (count === 0) {
-                  const peopleListContainer = document.querySelector('[role="list"]'); // Check the original list container
-                  if (!peopleListContainer || !document.body.contains(peopleListContainer)) {
-                       (window as any).logBot(
-                          "Participant list container not found (and participant count is 0); assuming meeting ended."
-                       );
-                       logLeave('people_list_missing_assume_meeting_ended');
-                       clearInterval(checkInterval);
-                       recorder.disconnect();
-                       if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
-                       (window as any).triggerNodeGracefulLeave();
-                       resolve(); // Resolve the main promise from page.evaluate
-                       return;   // Exit setInterval callback
-                  }
+                const currentBodyText = document.body.innerText;
+                if (currentBodyText.includes('You\'ve been removed from the meeting')) {
+                  (window as any).logBot('User was removed from the meeting - ending recording');
+                  return false;
+                }
+
+                // Check for basic Google Meet UI elements
+                const hasMeetElements = document.querySelector('button[aria-label="People"]') !== null ||
+                                      document.querySelector('button[aria-label="Leave call"]') !== null;
+
+                if (!hasMeetElements) {
+                  (window as any).logBot('Google Meet UI elements not found - page may have changed state');
+                  return false;
+                }
+
+                return true;
+              } catch (error: any) {
+                (window as any).logBot('Error checking page validity: ' + error.message);
+                return false;
+              }
+            };
+
+            const checkInterval = setInterval(() => {
+              try {
+                // First check if we're still on a valid Google Meet page
+                if (!isOnValidGoogleMeetPage()) {
+                  (window as any).logBot('Google Meet page state changed - ending recording');
+                  logLeave('page_state_changed');
+                  clearInterval(checkInterval);
+                  recorder.disconnect();
+                  if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
+                  (window as any).triggerNodeGracefulLeave();
+                  resolve();
+                  return;
+                }
+
+                // UPDATED: Use the size of our central map as the source of truth
+                const count = activeParticipants.size;
+                const participantIds = Array.from(activeParticipants.keys());
+                (window as any).logBot(`Participant check: Found ${count} unique participants from central list. IDs: ${JSON.stringify(participantIds)}`);
+
+                // Reset failure count on successful detection
+                detectionFailures = 0;
+
+                // If count is 0, it could mean everyone left, OR the participant list area itself is gone.
+                if (count === 0) {
+                    const peopleListContainer = document.querySelector('[role="list"]'); // Check the original list container
+                    if (!peopleListContainer || !document.body.contains(peopleListContainer)) {
+                         (window as any).logBot(
+                            "Participant list container not found (and participant count is 0); assuming meeting ended."
+                         );
+                         logLeave('people_list_missing_assume_meeting_ended');
+                         clearInterval(checkInterval);
+                         recorder.disconnect();
+                         if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
+                         (window as any).triggerNodeGracefulLeave();
+                         resolve(); // Resolve the main promise from page.evaluate
+                         return;   // Exit setInterval callback
+                    }
+                }
+              } catch (error: any) {
+                detectionFailures++;
+                (window as any).logBot('Participant detection failed: ' + error.message + ' (Failure count: ' + detectionFailures + ')');
+                
+                if (detectionFailures >= maxDetectionFailures) {
+                  (window as any).logBot('Participant detection consistently failing - this may indicate a Google Meet UI change. Meeting will continue until other timeout conditions.');
+                  // Don't clear interval, just stop failing - let other conditions handle the exit
+                }
+                return; // Skip participant count logic on detection failure
               }
 
               // Leave when no participants remain for configured timeout
