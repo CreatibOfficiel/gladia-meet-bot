@@ -1208,6 +1208,71 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
               (window as any).logBot(`[KeepAlive] Setup error: ${e?.message || e}`);
             }
 
+            // Handle "Got it" popups that may appear
+            const handleGotItPopups = async () => {
+              try {
+                (window as any).logBot('Checking for "Got it" popups...');
+                
+                let gotItButtonsClicked = 0;
+                let previousButtonCount = -1;
+                let consecutiveNoChangeCount = 0;
+                const maxConsecutiveNoChange = 2;
+
+                while (true) {
+                  // Find all visible "Got it" buttons
+                  const visibleButtons = Array.from(
+                    document.querySelectorAll('button')
+                  ).filter((btn: any) => {
+                    const text = btn.textContent || btn.innerText || '';
+                    return text.toLowerCase().includes('got it') && 
+                           btn.offsetParent !== null; // Check if visible
+                  });
+                
+                  const currentButtonCount = visibleButtons.length;
+                  
+                  if (currentButtonCount === 0) {
+                    break;
+                  }
+                  
+                  // Check if button count hasn't changed
+                  if (currentButtonCount === previousButtonCount) {
+                    consecutiveNoChangeCount++;
+                    if (consecutiveNoChangeCount >= maxConsecutiveNoChange) {
+                      (window as any).logBot(`Button count hasn't changed for ${maxConsecutiveNoChange} iterations, stopping`);
+                      break;
+                    }
+                  } else {
+                    consecutiveNoChangeCount = 0;
+                  }
+                  
+                  previousButtonCount = currentButtonCount;
+
+                  for (const btn of visibleButtons) {
+                    try {
+                      (btn as HTMLElement).click();
+                      gotItButtonsClicked++;
+                      (window as any).logBot(`Clicked "Got it" button #${gotItButtonsClicked}`);
+                      
+                      await new Promise(resolve => setTimeout(resolve, 2000));
+                    } catch (err) {
+                      (window as any).logBot('Click failed, possibly already dismissed');
+                    }
+                  }
+                
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+                
+                if (gotItButtonsClicked > 0) {
+                  (window as any).logBot(`Successfully handled ${gotItButtonsClicked} "Got it" popup(s)`);
+                }
+              } catch (error: any) {
+                (window as any).logBot('Error handling Got it popups: ' + error.message);
+              }
+            };
+
+            // Handle popups first
+            await handleGotItPopups();
+
             // Click the "People" button
             const peopleButton = document.querySelector(
               'button[aria-label^="People"]'
