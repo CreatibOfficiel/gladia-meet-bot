@@ -1297,6 +1297,47 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             let detectionFailures = 0;
             const maxDetectionFailures = 10; // Track up to 10 consecutive failures
             
+            // Enhanced kick detection system (inspired by MeetingBot)
+            const checkKickedFromMeeting = () => {
+              try {
+                // Method 1: Check for "Return to home screen" button (kick condition 1)
+                const returnHomeButton = document.querySelector('button[aria-label="Return to home screen"]') ||
+                                       document.querySelector('//button[.//span[text()="Return to home screen"]]');
+                if (returnHomeButton) {
+                  (window as any).logBot('Detected "Return to home screen" button - bot was kicked');
+                  return true;
+                }
+
+                // Method 2: Check if Leave call button is hidden (kick condition 2)
+                const leaveButton = document.querySelector('button[aria-label="Leave call"]');
+                if (leaveButton && (leaveButton as HTMLElement).offsetParent === null) {
+                  (window as any).logBot('Leave call button is hidden - may have been kicked');
+                  return true;
+                }
+
+                // Method 3: Check for removal messages (kick condition 3)
+                const bodyText = document.body.innerText;
+                const kickMessages = [
+                  'You\'ve been removed from the meeting',
+                  'You have been removed from this meeting',
+                  'The meeting has ended',
+                  'This meeting has ended'
+                ];
+                
+                for (const message of kickMessages) {
+                  if (bodyText.includes(message)) {
+                    (window as any).logBot('Detected kick/end message: ' + message);
+                    return true;
+                  }
+                }
+
+                return false;
+              } catch (error: any) {
+                (window as any).logBot('Error checking kick status: ' + error.message);
+                return false;
+              }
+            };
+
             // Check if we're still on a valid Google Meet page (inspired by ScreenApp)
             const isOnValidGoogleMeetPage = () => {
               try {
@@ -1307,9 +1348,9 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   return false;
                 }
 
-                const currentBodyText = document.body.innerText;
-                if (currentBodyText.includes('You\'ve been removed from the meeting')) {
-                  (window as any).logBot('User was removed from the meeting - ending recording');
+                // Use enhanced kick detection
+                if (checkKickedFromMeeting()) {
+                  (window as any).logBot('Bot has been kicked or meeting has ended');
                   return false;
                 }
 
