@@ -2,7 +2,7 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { log, initFileLogger } from "./utils";
 import { chromium } from "playwright-extra";
 import { handleGoogleMeet, leaveGoogleMeet } from "./platforms/google";
-import { browserArgs, userAgent } from "./constans";
+import { browserArgs, userAgent, getRandomUserAgent, getRandomViewport } from "./constans";
 import { BotConfig } from "./types";
 import { createClient, RedisClientType } from 'redis';
 import { Page, Browser } from 'playwright-core';
