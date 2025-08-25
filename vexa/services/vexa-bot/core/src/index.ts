@@ -284,14 +284,17 @@ export async function runBot(botConfig: BotConfig): Promise<void> {
     args: browserArgs,
   });
 
+  // Get a random User-Agent and viewport for this bot instance
+  const randomUserAgent = getRandomUserAgent();
+  const randomViewport = getRandomViewport();
+  log(`Using User-Agent: ${randomUserAgent}`);
+  log(`Using viewport: ${randomViewport.width}x${randomViewport.height}`);
+
   // Create a new page with permissions and viewport
   const context = await browserInstance.newContext({
     permissions: ["camera", "microphone"],
-    userAgent: userAgent,
-    viewport: {
-      width: 1280,
-      height: 720
-    }
+    userAgent: randomUserAgent,
+    viewport: randomViewport
   })
   page = await context.newPage(); // Assign to the module-scoped page variable
 
