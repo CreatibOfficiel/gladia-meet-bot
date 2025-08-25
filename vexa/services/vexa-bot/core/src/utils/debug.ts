@@ -1,5 +1,7 @@
 import { Page } from "playwright";
-import { log } from "./index";
+import { log } from "../utils";
+import * as fs from "fs";
+import * as path from "path";
 
 /**
  * Take a debug screenshot for troubleshooting
@@ -23,9 +25,17 @@ export async function takeDebugScreenshot(
       fullPage: true,
     });
     
-    // In a real implementation, you might want to save this to a specific directory
-    // or upload to a cloud storage service. For now, we'll just log it.
-    log(`Debug screenshot taken: ${filename} (reason: ${reason}) - ${screenshot.length} bytes`);
+    // Create screenshots directory if it doesn't exist
+    const screenshotsDir = path.join(process.cwd(), 'screenshots');
+    if (!fs.existsSync(screenshotsDir)) {
+      fs.mkdirSync(screenshotsDir, { recursive: true });
+    }
+    
+    // Save screenshot to file
+    const filePath = path.join(screenshotsDir, filename);
+    fs.writeFileSync(filePath, screenshot);
+    
+    log(`Debug screenshot saved: ${filePath} (reason: ${reason}) - ${screenshot.length} bytes`);
     
   } catch (error: any) {
     log(`Error taking debug screenshot ${filename}: ${error.message}`);

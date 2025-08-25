@@ -21,9 +21,12 @@ export async function handleGoogleMeet(
   log("Joining Google Meet");
   try {
     await joinMeeting(page, botConfig.meetingUrl, botConfig.botName);
+    log("Join meeting completed successfully");
+    await takeDebugScreenshot(page, "after-join-meeting", "join_meeting_completed");
   } catch (error: any) {
     console.error("Error during joinMeeting: " + error.message);
-    log("Error during joinMeeting: " + error.message + ". Triggering graceful leave.");
+    log("Error during joinMeeting: " + error.message + ". Taking screenshot and triggering graceful leave.");
+    await takeDebugScreenshot(page, "join-meeting-error", "join_meeting_failed");
     await gracefulLeaveFunction(page, 1, "join_meeting_error");
     return;
   }
@@ -43,24 +46,29 @@ export async function handleGoogleMeet(
 
     if (!isAdmitted) {
       console.error("Bot was not admitted into the meeting");
-      log("Bot not admitted. Triggering graceful leave with admission_failed reason.");
-      
+      log("Bot not admitted. Taking final screenshot and triggering graceful leave with admission_failed reason.");
+      await takeDebugScreenshot(page, "admission-failed-final", "admission_failed_final");
       await gracefulLeaveFunction(page, 2, "admission_failed");
       return; 
     }
 
     log("Successfully admitted to the meeting, preparing for recording");
+    await takeDebugScreenshot(page, "before-prepare-recording", "admitted_to_meeting");
+    
     // Retry prepareForRecording with backoff if it fails
     const maxRetries = 3;
     for (let i = 0; i < maxRetries; i++) {
       try {
         await prepareForRecording(page);
         log("Recording preparation successful");
+        await takeDebugScreenshot(page, "recording-prepared", "recording_preparation_successful");
         break; // Success
       } catch (error: any) {
         log(`prepareForRecording failed (attempt ${i + 1}/${maxRetries}): ${error.message}`);
+        await takeDebugScreenshot(page, `recording-prep-fail-attempt-${i+1}`, `recording_preparation_failed_attempt_${i+1}`);
         if (i === maxRetries - 1) {
-          log("Failed to prepare recording after all retries. Leaving meeting.");
+          log("Failed to prepare recording after all retries. Taking screenshot and leaving meeting.");
+          await takeDebugScreenshot(page, "recording-prep-all-retries-failed", "recording_preparation_all_retries_failed");
           await gracefulLeaveFunction(page, 3, "prepare_recording_failed");
           return;
         }
@@ -70,11 +78,13 @@ export async function handleGoogleMeet(
     }
     
     log("Starting recording");
+    await takeDebugScreenshot(page, "before-start-recording", "before_starting_recording");
     // Pass platform from botConfig to startRecording
     await startRecording(page, botConfig);
   } catch (error: any) {
     console.error("Error after join attempt (admission/recording setup): " + error.message);
-    log("Error after join attempt (admission/recording setup): " + error.message + ". Triggering graceful leave.");
+    log("Error after join attempt (admission/recording setup): " + error.message + ". Taking screenshot and triggering graceful leave.");
+    await takeDebugScreenshot(page, "post-join-setup-error", "post_join_setup_error");
     // Use a general error code here, as it could be various issues.
     await gracefulLeaveFunction(page, 1, "post_join_setup_error");
     return;
@@ -115,6 +125,8 @@ const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
   const muteButton = '[aria-label*="Turn off microphone"]';
   const cameraOffButton = '[aria-label*="Turn off camera"]';
 
+  log(`Starting joinMeeting process for URL: ${meetingUrl}`);
+
   // Inject anti-detection code using addInitScript
   await page.addInitScript(() => {
     // Disable navigator.webdriver to avoid detection
@@ -146,8 +158,11 @@ const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
     Object.defineProperty(screen, "availHeight", { get: () => 1040 });
   });
 
+  log("Navigating to meeting URL...");
   await page.goto(meetingUrl, { waitUntil: "networkidle" });
   await page.bringToFront();
+  log("Navigation completed, taking screenshot...");
+  await takeDebugScreenshot(page, "after-navigation", "navigation_completed");
 
   // Simulate human-like mouse movements
   await page.mouse.move(10, 372);
@@ -160,6 +175,8 @@ const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
   // Add a longer, fixed wait after navigation for page elements to settle
   log("Waiting for page elements to settle after navigation...");
   await page.waitForTimeout(5000); // Wait 5 seconds
+  log("Page elements should be settled, taking screenshot...");
+  await takeDebugScreenshot(page, "after-page-settle", "page_elements_settled");
 
   // Enter name and join with retry
   await page.waitForTimeout(randomDelay(1000));
@@ -175,24 +192,32 @@ const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
   log("Name input field found.");
 
   await page.waitForTimeout(randomDelay(1000));
+  log(`Filling name field with: ${botName}`);
   await page.fill(enterNameField, botName);
+  log("Name field filled, taking screenshot...");
+  await takeDebugScreenshot(page, "name-field-filled", "name_field_filled");
 
   // Mute mic and camera if available
   try {
+    log("Attempting to mute microphone...");
     await page.waitForTimeout(randomDelay(500));
     await page.click(muteButton, { timeout: 200 });
     await page.waitForTimeout(200);
+    log("Microphone muted successfully");
   } catch (e) {
     log("Microphone already muted or not found.");
   }
   try {
+    log("Attempting to turn off camera...");
     await page.waitForTimeout(randomDelay(500));
     await page.click(cameraOffButton, { timeout: 200 });
     await page.waitForTimeout(200);
+    log("Camera turned off successfully");
   } catch (e) {
     log("Camera already off or not found.");
   }
 
+  log("Attempting to click Ask to join button...");
   await retryActionWithWait(
     "Clicking the Ask to join button",
     async () => {
@@ -203,7 +228,8 @@ const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
     10000,
     async () => await takeRetryFailureScreenshot(page, "clicking-ask-to-join")
   );
-  log(`${botName} requested to join the Meeting.`);
+  log(`${botName} requested to join the Meeting. Taking screenshot...`);
+  await takeDebugScreenshot(page, "ask-to-join-clicked", "ask_to_join_button_clicked");
 };
 
 // Modified to have only the actual recording functionality
@@ -1391,71 +1417,77 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 }
 
                 // UPDATED: Use the size of our central map as the source of truth
-                const count = activeParticipants.size;
-                const participantIds = Array.from(activeParticipants.keys());
-                (window as any).logBot(`Participant check: Found ${count} unique participants from central list. IDs: ${JSON.stringify(participantIds)}`);
+                let count = 0; // Declare count outside try-catch
+                try {
+                  count = activeParticipants.size;
+                  const participantIds = Array.from(activeParticipants.keys());
+                  (window as any).logBot(`Participant check: Found ${count} unique participants from central list. IDs: ${JSON.stringify(participantIds)}`);
 
-                // Reset failure count on successful detection
-                detectionFailures = 0;
+                  // Reset failure count on successful detection
+                  detectionFailures = 0;
 
-                // If count is 0, it could mean everyone left, OR the participant list area itself is gone.
+                  // If count is 0, it could mean everyone left, OR the participant list area itself is gone.
+                  if (count === 0) {
+                      const peopleListContainer = document.querySelector('[role="list"]'); // Check the original list container
+                      if (!peopleListContainer || !document.body.contains(peopleListContainer)) {
+                           (window as any).logBot(
+                              "Participant list container not found (and participant count is 0); assuming meeting ended."
+                           );
+                           logLeave('people_list_missing_assume_meeting_ended');
+                           clearInterval(checkInterval);
+                           recorder.disconnect();
+                           if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
+                           (window as any).triggerNodeGracefulLeave();
+                           resolve(); // Resolve the main promise from page.evaluate
+                           return;   // Exit setInterval callback
+                      }
+                  }
+                } catch (error: any) {
+                  detectionFailures++;
+                  (window as any).logBot('Participant detection failed: ' + error.message + ' (Failure count: ' + detectionFailures + ')');
+                  
+                  if (detectionFailures >= maxDetectionFailures) {
+                    (window as any).logBot('Participant detection consistently failing - this may indicate a Google Meet UI change. Meeting will continue until other timeout conditions.');
+                    // Don't clear interval, just stop failing - let other conditions handle the exit
+                  }
+                  return; // Skip participant count logic on detection failure
+                }
+
+                // Leave when no participants remain for configured timeout
                 if (count === 0) {
-                    const peopleListContainer = document.querySelector('[role="list"]'); // Check the original list container
-                    if (!peopleListContainer || !document.body.contains(peopleListContainer)) {
-                         (window as any).logBot(
-                            "Participant list container not found (and participant count is 0); assuming meeting ended."
-                         );
-                         logLeave('people_list_missing_assume_meeting_ended');
-                         clearInterval(checkInterval);
-                         recorder.disconnect();
-                         if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
-                         (window as any).triggerNodeGracefulLeave();
-                         resolve(); // Resolve the main promise from page.evaluate
-                         return;   // Exit setInterval callback
-                    }
+                  noParticipantsMs += 5000;
+                  (window as any).logBot(`[Participants] No participants. Accumulated: ${noParticipantsMs}ms / threshold ${everyoneLeftTimeoutMs}ms`);
+                  if (noParticipantsMs >= everyoneLeftTimeoutMs) {
+                    (window as any).logBot("No participants for configured timeout. Leaving meeting...");
+                    logLeave('no_participants_timeout', { duration_ms: noParticipantsMs });
+                    clearInterval(checkInterval);
+                    recorder.disconnect();
+                    if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
+                    (window as any).triggerNodeGracefulLeave();
+                    resolve();
+                  }
+                } else if (count <= 1) { // Only the bot remains
+                  aloneWithBotMs += 5000;
+                  (window as any).logBot(`[Participants] Alone with bot. Accumulated: ${aloneWithBotMs}ms / threshold ${aloneTimeoutMs}ms`);
+                  if (aloneWithBotMs >= aloneTimeoutMs) {
+                    (window as any).logBot("Alone with bot for configured timeout. Leaving meeting...");
+                    logLeave('alone_with_bot_timeout', { duration_ms: aloneWithBotMs });
+                    clearInterval(checkInterval);
+                    recorder.disconnect();
+                    if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
+                    (window as any).triggerNodeGracefulLeave();
+                    resolve();
+                  }
+                } else {
+                  if (noParticipantsMs > 0) {
+                    (window as any).logBot('[Participants] Someone present. Resetting no-participants timer.');
+                  }
+                  noParticipantsMs = 0;
+                  aloneWithBotMs = 0;
                 }
               } catch (error: any) {
-                detectionFailures++;
-                (window as any).logBot('Participant detection failed: ' + error.message + ' (Failure count: ' + detectionFailures + ')');
-                
-                if (detectionFailures >= maxDetectionFailures) {
-                  (window as any).logBot('Participant detection consistently failing - this may indicate a Google Meet UI change. Meeting will continue until other timeout conditions.');
-                  // Don't clear interval, just stop failing - let other conditions handle the exit
-                }
-                return; // Skip participant count logic on detection failure
-              }
-
-              // Leave when no participants remain for configured timeout
-              if (count === 0) {
-                noParticipantsMs += 5000;
-                (window as any).logBot(`[Participants] No participants. Accumulated: ${noParticipantsMs}ms / threshold ${everyoneLeftTimeoutMs}ms`);
-                if (noParticipantsMs >= everyoneLeftTimeoutMs) {
-                  (window as any).logBot("No participants for configured timeout. Leaving meeting...");
-                  logLeave('no_participants_timeout', { duration_ms: noParticipantsMs });
-                  clearInterval(checkInterval);
-                  recorder.disconnect();
-                  if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
-                  (window as any).triggerNodeGracefulLeave();
-                  resolve();
-                }
-              } else if (count <= 1) { // Only the bot remains
-                aloneWithBotMs += 5000;
-                (window as any).logBot(`[Participants] Alone with bot. Accumulated: ${aloneWithBotMs}ms / threshold ${aloneTimeoutMs}ms`);
-                if (aloneWithBotMs >= aloneTimeoutMs) {
-                  (window as any).logBot("Alone with bot for configured timeout. Leaving meeting...");
-                  logLeave('alone_with_bot_timeout', { duration_ms: aloneWithBotMs });
-                  clearInterval(checkInterval);
-                  recorder.disconnect();
-                  if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
-                  (window as any).triggerNodeGracefulLeave();
-                  resolve();
-                }
-              } else {
-                if (noParticipantsMs > 0) {
-                  (window as any).logBot('[Participants] Someone present. Resetting no-participants timer.');
-                }
-                noParticipantsMs = 0;
-                aloneWithBotMs = 0;
+                (window as any).logBot('Error in participant check interval: ' + error.message);
+                // Don't clear interval on error, just log it
               }
             }, 5000);
 
