@@ -219,20 +219,25 @@ async function performGracefulLeave(
 // --- ------------------------------------------------------------ ---
 
 export async function runBot(botConfig: BotConfig): Promise<void> {
-  // --- UPDATED: Parse and store config values ---
-  currentLanguage = botConfig.language;
-  currentTask = botConfig.task || 'transcribe';
-  currentRedisUrl = botConfig.redisUrl;
-  currentConnectionId = botConfig.connectionId;
-  botManagerCallbackUrl = botConfig.botManagerCallbackUrl || null; // ADDED: Get callback URL from botConfig
-  currentPlatform = botConfig.platform; // Set currentPlatform here
+  try {
+    log("🚀 === BOT STARTUP BEGIN ===");
+    
+    // --- UPDATED: Parse and store config values ---
+    currentLanguage = botConfig.language;
+    currentTask = botConfig.task || 'transcribe';
+    currentRedisUrl = botConfig.redisUrl;
+    currentConnectionId = botConfig.connectionId;
+    botManagerCallbackUrl = botConfig.botManagerCallbackUrl || null; // ADDED: Get callback URL from botConfig
+    currentPlatform = botConfig.platform; // Set currentPlatform here
 
-  // Destructure other needed config values
-  const { meetingUrl, platform, botName } = botConfig;
+    // Destructure other needed config values
+    const { meetingUrl, platform, botName } = botConfig;
 
-  log(`Starting bot for ${platform} with URL: ${meetingUrl}, name: ${botName}, language: ${currentLanguage}, task: ${currentTask}, connectionId: ${currentConnectionId}`);
-  // Initialize per-call file logging if configured
-  try { initFileLogger(currentConnectionId || undefined); } catch (_) {}
+    log(`Starting bot for ${platform} with URL: ${meetingUrl}, name: ${botName}, language: ${currentLanguage}, task: ${currentTask}, connectionId: ${currentConnectionId}`);
+    log(`Bot config received: ${JSON.stringify(botConfig, null, 2)}`);
+    
+    // Initialize per-call file logging if configured
+    try { initFileLogger(currentConnectionId || undefined); } catch (_) {}
 
   // --- ADDED: Redis Client Setup and Subscription ---
   if (currentRedisUrl && currentConnectionId) {
@@ -273,30 +278,49 @@ export async function runBot(botConfig: BotConfig): Promise<void> {
   // -------------------------------------------------
 
   // Use Stealth Plugin to avoid detection
+  log("🔧 Setting up Stealth Plugin...");
   const stealthPlugin = StealthPlugin();
   stealthPlugin.enabledEvasions.delete("iframe.contentWindow");
   stealthPlugin.enabledEvasions.delete("media.codecs");
   chromium.use(stealthPlugin);
+  log("✅ Stealth Plugin configured");
 
   // Launch browser with stealth configuration
-  browserInstance = await chromium.launch({
-    headless: false,
-    args: browserArgs,
-  });
+  log("🌐 Launching browser...");
+  try {
+    browserInstance = await chromium.launch({
+      headless: false,
+      args: browserArgs,
+    });
+    log("✅ Browser launched successfully");
+  } catch (error: any) {
+    log(`❌ Failed to launch browser: ${error.message}`);
+    throw error;
+  }
 
   // Get a random User-Agent and viewport for this bot instance
   const randomUserAgent = getRandomUserAgent();
   const randomViewport = getRandomViewport();
-  log(`Using User-Agent: ${randomUserAgent}`);
-  log(`Using viewport: ${randomViewport.width}x${randomViewport.height}`);
+  log(`🎭 Using User-Agent: ${randomUserAgent}`);
+  log(`📱 Using viewport: ${randomViewport.width}x${randomViewport.height}`);
 
   // Create a new page with permissions and viewport
-  const context = await browserInstance.newContext({
-    permissions: ["camera", "microphone"],
-    userAgent: randomUserAgent,
-    viewport: randomViewport
-  })
-  page = await context.newPage(); // Assign to the module-scoped page variable
+  log("📄 Creating browser context...");
+  try {
+    const context = await browserInstance.newContext({
+      permissions: ["camera", "microphone"],
+      userAgent: randomUserAgent,
+      viewport: randomViewport
+    });
+    log("✅ Browser context created");
+    
+    log("📄 Creating new page...");
+    page = await context.newPage(); // Assign to the module-scoped page variable
+    log("✅ Page created successfully");
+  } catch (error: any) {
+    log(`❌ Failed to create context/page: ${error.message}`);
+    throw error;
+  }
 
   // --- ADDED: Expose a function for browser to trigger Node.js graceful leave ---
   await page.exposeFunction("triggerNodeGracefulLeave", async () => {
@@ -346,6 +370,25 @@ export async function runBot(botConfig: BotConfig): Promise<void> {
   }
 
   log('Bot execution completed OR waiting for external termination/command.'); // Update log message
+  
+  } catch (error: any) {
+    log(`❌ CRITICAL ERROR in runBot: ${error.message}`);
+    log(`❌ Error stack: ${error.stack}`);
+    
+    // Try to perform graceful leave if page exists
+    if (page && !page.isClosed()) {
+      try {
+        await performGracefulLeave(page, 1, `critical_error: ${error.message}`);
+      } catch (leaveError: any) {
+        log(`❌ Failed to perform graceful leave: ${leaveError.message}`);
+      }
+    }
+    
+    // Re-throw the error to be caught by the caller
+    throw error;
+  } finally {
+    log("🏁 === BOT STARTUP END ===");
+  }
 }
 
 // --- ADDED: Basic Signal Handling (for future Phase 5) ---
