@@ -25,6 +25,7 @@ async def run(meeting: Meeting, db: AsyncSession):
             'native_meeting_id': meeting.native_meeting_id,
             'user_id': meeting.user_id,
             'status': meeting.status,
+            'gladia_session_id': getattr(meeting, 'gladia_session_id', None),
             'start_time': meeting.start_time.isoformat() if meeting.start_time else None,
             'end_time': meeting.end_time.isoformat() if meeting.end_time else None,
         }

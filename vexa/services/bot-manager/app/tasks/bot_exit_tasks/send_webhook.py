@@ -34,6 +34,7 @@ async def run(meeting: Meeting, db: AsyncSession):
             'constructed_meeting_url': meeting.constructed_meeting_url,
             'status': meeting.status,
             'bot_container_id': meeting.bot_container_id,
+            'gladia_session_id': getattr(meeting, 'gladia_session_id', None),
             'start_time': meeting.start_time.isoformat() if meeting.start_time else None,
             'end_time': meeting.end_time.isoformat() if meeting.end_time else None,
             'data': meeting.data or {},
