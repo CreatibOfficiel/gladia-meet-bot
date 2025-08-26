@@ -1479,10 +1479,9 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 // UPDATED: Use the size of our central map as the source of truth
                 let count = 0; // Declare count outside try-catch
                 try {
-                  const allIds = Array.from(activeParticipants.keys());
-                  const humanIds = allIds.filter(id => !/^vexa-id-/.test(String(id)));
-                  count = humanIds.length;
-                  (window as any).logBot(`Participant check: Found ${count} human participants. All IDs: ${JSON.stringify(allIds)} | Human IDs: ${JSON.stringify(humanIds)}`);
+                  count = activeParticipants.size;
+                  const participantIds = Array.from(activeParticipants.keys());
+                  (window as any).logBot(`Participant check: Found ${count} unique participants from central list. IDs: ${JSON.stringify(participantIds)}`);
 
                   // Reset failure count on successful detection
                   detectionFailures = 0;
