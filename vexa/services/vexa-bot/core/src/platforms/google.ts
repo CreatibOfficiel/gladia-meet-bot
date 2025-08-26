@@ -1324,7 +1324,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             let noParticipantsMs = 0;
             let aloneWithBotMs = 0;
             const everyoneLeftTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.everyoneLeftTimeout ? (botConfigData as any).automaticLeave.everyoneLeftTimeout : 60000;
-            const aloneTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.noOneJoinedTimeout ? (botConfigData as any).automaticLeave.noOneJoinedTimeout : 5000;
+            const aloneTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.noOneJoinedTimeout ? (botConfigData as any).automaticLeave.noOneJoinedTimeout : 60000; // 60s when alone (was 5s)
             // Enhanced participant detection with failure resilience like ScreenApp
             let detectionFailures = 0;
             const maxDetectionFailures = 10; // Track up to 10 consecutive failures
