@@ -35,9 +35,7 @@ export async function takeDebugScreenshot(
     const meetingId = process.env.BOT_MEETING_ID || 'unknown';
     const sessionUid = process.env.BOT_SESSION_UID || 'unknown';
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    // Ensure PNG extension is present
-    const baseName = `${meetingId}_${sessionUid}_${timestamp}_${filename}`;
-    const enhancedFilename = baseName.endsWith('.png') ? baseName : `${baseName}.png`;
+    const enhancedFilename = `${meetingId}_${sessionUid}_${timestamp}_${filename}`;
     
     // Save screenshot to file
     const filePath = path.join(screenshotsDir, enhancedFilename);

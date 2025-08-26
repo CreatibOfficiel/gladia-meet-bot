@@ -805,8 +805,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
 
             // --- ADD: Speaker Detection Logic (Adapted from speakers_console_test.js) ---
             // Configuration for speaker detection
-            // Enhanced participant selector based on research from other Google Meet bot projects
-            const participantSelector = 'div[data-participant-id], div[data-requested-participant-id], span.zWGUib'; // Multiple fallback selectors
+            const participantSelector = 'div[data-participant-id]'; // UPDATED: More specific selector
             const speakingClasses = ['Oaajhc', 'HX2H7', 'wEsLMd', 'OgVli']; // Speaking/animation classes
             const silenceClass = 'gjg47c';        // Class indicating the participant is silent
             const nameSelectors = [               // Try these selectors to find participant's name
@@ -934,7 +933,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                         sendSpeakerEvent("SPEAKER_START", participantElement);
                     }
                     speakingStates.set(participantId, "speaking");
-                    lastActivityTime = Date.now(); // Update activity time on speaking
                 } else if (isNowVisiblySilent) {
                     if (previousLogicalState === "speaking") {
                         (window as any).logBot(`🔇 SPEAKER_END: ${participantName} (ID: ${participantId})`);
@@ -997,9 +995,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             }
 
             function scanForAllParticipants() {
-                // Enhanced participant detection with multiple methods (inspired by MeetingBot API)
-                
-                // Method 1: Standard participant selector
                 const participantElements = document.querySelectorAll(participantSelector);
                 for (let i = 0; i < participantElements.length; i++) {
                     const el = participantElements[i] as HTMLElement;
@@ -1007,31 +1002,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                          observeParticipant(el);
                     }
                 }
-                
-                // Method 2: Check for merged audio participants (MeetingBot API method)
-                const mergedAudioNode = document.querySelector('[aria-label="Merged audio"]');
-                if (mergedAudioNode && mergedAudioNode.parentNode) {
-                    (window as any).logBot('Found merged audio node, scanning for additional participants');
-                    mergedAudioNode.parentNode.childNodes.forEach((childNode: any) => {
-                        if (childNode.nodeType === Node.ELEMENT_NODE) {
-                            const participantId = childNode.getAttribute("data-participant-id");
-                            if (participantId && !(childNode as any).dataset.vexaObserverAttached) {
-                                (window as any).logBot(`Found participant in merged audio: ${participantId}`);
-                                observeParticipant(childNode);
-                            }
-                        }
-                    });
-                }
-                
-                // Method 3: Fallback search using Balena MeetBot's method
-                const nameSpans = document.querySelectorAll('span.zWGUib');
-                nameSpans.forEach((span) => {
-                    const participantDiv = span.closest('[data-participant-id]') || span.closest('div');
-                    if (participantDiv && !(participantDiv as any).dataset.vexaObserverAttached) {
-                        (window as any).logBot(`Found participant via name span: ${span.textContent}`);
-                        observeParticipant(participantDiv as HTMLElement);
-                    }
-                });
             }
 
             // Initialize speaker detection
@@ -1335,55 +1305,29 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             // Handle popups first
             await handleGotItPopups();
 
-            // Try to click the "People" button to open participant panel (optional)
-            // Using improved selectors from other Google Meet bot projects
-            let peopleButton = null;
-            
-            // Method 1: New People icon detection (most reliable - from MeetingBot API)
-            const peopleIconButton = Array.from(document.querySelectorAll("i"))
-              .find((el) => el.textContent?.trim() === "people");
-            if (peopleIconButton) {
-              peopleButton = peopleIconButton.closest("button");
-            }
-            
-            // Method 2: Traditional aria-label selectors with fallbacks
+            // Click the "People" button
+            const peopleButton = document.querySelector(
+              'button[aria-label^="People"]'
+            );
             if (!peopleButton) {
-              peopleButton = document.querySelector('button[aria-label^="People"]') ||
-                           document.querySelector('button[aria-label*="participants"]') ||
-                           document.querySelector('button[aria-label*="People"]') ||
-                           document.querySelector('button[data-testid="people-button"]');
+              recorder.disconnect();
+              return reject(
+                new Error(
+                  "[BOT Inner Error] 'People' button not found. Update the selector."
+                )
+              );
             }
-            
-            if (peopleButton) {
-              (window as any).logBot('Found People button using improved selectors, clicking to open participant panel');
-              (peopleButton as HTMLElement).click();
-              
-              // Wait for participants panel to load
-              setTimeout(() => {
-                const participantsPanel = document.querySelector('[aria-label="Participants"]');
-                if (participantsPanel) {
-                  (window as any).logBot('Participants panel opened successfully');
-                } else {
-                  (window as any).logBot('Participants panel not found after click - will use alternative detection');
-                }
-              }, 1000);
-            } else {
-              (window as any).logBot('People button not found with any selector - continuing with alternative participant detection methods');
-            }
+            (peopleButton as HTMLElement).click();
 
             // Monitor participant list every 5 seconds
             let aloneTime = 0; // legacy variable, no longer used for leaving
             let noParticipantsMs = 0;
             let aloneWithBotMs = 0;
-            // Enhanced timeout configuration based on research from other Google Meet bots
-            const everyoneLeftTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.everyoneLeftTimeout ? (botConfigData as any).automaticLeave.everyoneLeftTimeout : 60000; // 1 minute when everyone left
-            const aloneTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.noOneJoinedTimeout ? (botConfigData as any).automaticLeave.noOneJoinedTimeout : 30000; // 30s when alone (increased from 5s)
-            const inactivityTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.inactivityTimeout ? (botConfigData as any).automaticLeave.inactivityTimeout : 300000; // 5 minutes of no activity
+            const everyoneLeftTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.everyoneLeftTimeout ? (botConfigData as any).automaticLeave.everyoneLeftTimeout : 60000;
+            const aloneTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.noOneJoinedTimeout ? (botConfigData as any).automaticLeave.noOneJoinedTimeout : 5000;
             // Enhanced participant detection with failure resilience like ScreenApp
             let detectionFailures = 0;
             const maxDetectionFailures = 10; // Track up to 10 consecutive failures
-            let lastActivityTime = Date.now(); // Track when last speaker activity occurred
-            let lastParticipantCountTime = Date.now(); // Track when last participant was seen
             
             // Enhanced kick detection system (inspired by MeetingBot)
             const checkKickedFromMeeting = () => {

@@ -517,33 +517,6 @@ api-docs/
 swagger/
 
 # ===========================================
-# RESEARCH & ANALYSIS DATA
-# ===========================================
-
-# Research bot projects (cloned for analysis)
-research_bots/
-.vps_collect/
-DOM_RESEARCH_SUMMARY.md
-
-# Screenshots and binary files
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.bmp
-*.tiff
-*.webp
-screenshots/
-
-# Video and media files
-*.mp4
-*.avi
-*.mov
-*.mkv
-*.webm
-*.flv
-
-# ===========================================
 # MISC
 # ===========================================
 
