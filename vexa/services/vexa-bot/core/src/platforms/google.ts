@@ -1377,7 +1377,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             let aloneWithBotMs = 0;
             // Enhanced timeout configuration based on research from other Google Meet bots
             const everyoneLeftTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.everyoneLeftTimeout ? (botConfigData as any).automaticLeave.everyoneLeftTimeout : 60000; // 1 minute when everyone left
-            const aloneTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.noOneJoinedTimeout ? (botConfigData as any).automaticLeave.noOneJoinedTimeout : 60000; // 60s when alone (increased from 5s)
+            const aloneTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.noOneJoinedTimeout ? (botConfigData as any).automaticLeave.noOneJoinedTimeout : 30000; // 30s when alone (increased from 5s)
             const inactivityTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.inactivityTimeout ? (botConfigData as any).automaticLeave.inactivityTimeout : 300000; // 5 minutes of no activity
             // Enhanced participant detection with failure resilience like ScreenApp
             let detectionFailures = 0;
