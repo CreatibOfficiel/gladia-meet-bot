@@ -98,6 +98,11 @@ async function performGracefulLeave(
   }
   isShuttingDown = true;
   log(`[Graceful Leave] Initiating graceful shutdown sequence... Reason: ${reason}, Exit Code: ${exitCode}`);
+  
+  // Log detailed information for debugging
+  log(`[Graceful Leave] Bot details: Language=${currentLanguage}, Task=${currentTask}, Platform=${currentPlatform}`);
+  log(`[Graceful Leave] Connection ID: ${currentConnectionId}`);
+  // Note: botConfig details are logged in runBot when calling performGracefulLeave
 
   let platformLeaveSuccess = false;
   if (page && !page.isClosed()) { // Only attempt platform leave if page is valid
@@ -375,6 +380,11 @@ export async function runBot(botConfig: BotConfig): Promise<void> {
     log(`❌ CRITICAL ERROR in runBot: ${error.message}`);
     log(`❌ Error stack: ${error.stack}`);
     
+    // Log detailed error information for debugging
+    log(`❌ Bot configuration: ${JSON.stringify(botConfig, null, 2)}`);
+    log(`❌ Current language: ${currentLanguage}, task: ${currentTask}`);
+    log(`❌ Connection ID: ${currentConnectionId}`);
+    
     // Try to perform graceful leave if page exists
     if (page && !page.isClosed()) {
       try {
@@ -388,6 +398,26 @@ export async function runBot(botConfig: BotConfig): Promise<void> {
     throw error;
   } finally {
     log("🏁 === BOT STARTUP END ===");
+    
+    // Cleanup Redis connection
+    if (redisSubscriber) {
+      try {
+        await redisSubscriber.quit();
+        log("Redis connection closed");
+      } catch (err) {
+        log(`Error closing Redis connection: ${err}`);
+      }
+    }
+    
+    // Close browser if still open
+    if (browserInstance) {
+      try {
+        await browserInstance.close();
+        log("Browser closed");
+      } catch (err) {
+        log(`Error closing browser: ${err}`);
+      }
+    }
   }
 }
 

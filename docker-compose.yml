@@ -12,6 +12,11 @@ services:
     extends:
       file: ./vexa/docker-compose.yml
       service: bot-manager
+    environment:
+      - BOT_LOGS_HOST_DIR=/opt/vexa-bot/persistent_data/logs
+      - BOT_SCREENSHOTS_HOST_DIR=/opt/vexa-bot/persistent_data/screenshots
+    volumes:
+      - ./persistent_data:/opt/vexa-bot/persistent_data
     networks:
       - vexa_default
       - vexa_network

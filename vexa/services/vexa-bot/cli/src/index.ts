@@ -19,7 +19,15 @@ import { runBot } from "bot-core";
         process.exit(1);
       }
       try {
-        await runBot(config.data)
+        // Convert CLI config to full BotConfig format
+        const fullConfig = {
+          ...config.data,
+          nativeMeetingId: config.data.meetingUrl.split('/').pop() || 'unknown',
+          redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
+          language: null,
+          task: null
+        };
+        await runBot(fullConfig)
       } catch (error) {
         console.error('Failed to run bot:', error);
         process.exit(1);

@@ -278,7 +278,10 @@ async def start_bot_container(
         f"BOT_CONFIG={bot_config_json}",
         f"GLADIA_API_KEY={gladia_api_key_for_bot}", # Use the API key from bot-manager's env
         f"LOG_LEVEL={os.getenv('LOG_LEVEL', 'INFO').upper()}",
-        f"BOT_LOG_DIR=/var/log/vexa-bot"  # Location inside container for per-call logs
+        f"BOT_LOG_DIR=/app/logs",  # Location inside container for per-call logs
+        f"BOT_SCREENSHOTS_DIR=/app/screenshots",  # Location inside container for screenshots
+        f"BOT_MEETING_ID={meeting_id}",  # Pass meeting ID for logging
+        f"BOT_SESSION_UID={connection_id}"  # Pass session UID for logging
     ]
 
     # Ensure absolute path for URL encoding here as well
@@ -296,7 +299,8 @@ async def start_bot_container(
             "NetworkMode": DOCKER_NETWORK,
             "AutoRemove": True,
             "Binds": [
-                f"{os.getenv('BOT_LOGS_HOST_DIR', '/var/log/vexa-bot')}:/var/log/vexa-bot"
+                f"{os.getenv('BOT_LOGS_HOST_DIR', '/opt/vexa-bot/persistent_data/logs')}:/app/logs",
+                f"{os.getenv('BOT_SCREENSHOTS_HOST_DIR', '/opt/vexa-bot/persistent_data/screenshots')}:/app/screenshots"
             ]
         },
     }

@@ -25,14 +25,20 @@ export async function takeDebugScreenshot(
       fullPage: true,
     });
     
-    // Create screenshots directory if it doesn't exist
-    const screenshotsDir = path.join(process.cwd(), 'screenshots');
+    // Use persistent screenshots directory from environment or fallback to local
+    const screenshotsDir = process.env.BOT_SCREENSHOTS_DIR || path.join(process.cwd(), 'screenshots');
     if (!fs.existsSync(screenshotsDir)) {
       fs.mkdirSync(screenshotsDir, { recursive: true });
     }
     
+    // Add meeting ID and session UID to filename for better tracking
+    const meetingId = process.env.BOT_MEETING_ID || 'unknown';
+    const sessionUid = process.env.BOT_SESSION_UID || 'unknown';
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const enhancedFilename = `${meetingId}_${sessionUid}_${timestamp}_${filename}`;
+    
     // Save screenshot to file
-    const filePath = path.join(screenshotsDir, filename);
+    const filePath = path.join(screenshotsDir, enhancedFilename);
     fs.writeFileSync(filePath, screenshot);
     
     log(`Debug screenshot saved: ${filePath} (reason: ${reason}) - ${screenshot.length} bytes`);
