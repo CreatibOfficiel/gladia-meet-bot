@@ -253,7 +253,7 @@ async def start_bot_container(
         "automaticLeave": {
             "waitingRoomTimeout": 300000,
             "noOneJoinedTimeout": 5000,
-            "everyoneLeftTimeout": 60000
+            "everyoneLeftTimeout": 5000
         },
         "botManagerCallbackUrl": f"http://bot-manager:8080/bots/internal/callback/exited"
     }
