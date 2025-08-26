@@ -1390,11 +1390,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
               try {
                 // Method 1: Check for "Return to home screen" button (kick condition 1)
                 const returnHomeButton = document.querySelector('button[aria-label="Return to home screen"]') ||
-                  (() => {
-                    const spans = Array.from(document.querySelectorAll('button span')) as HTMLElement[];
-                    const span = spans.find(s => (s.textContent || '').trim() === 'Return to home screen');
-                    return span ? (span.closest('button') as HTMLElement | null) : null;
-                  })();
+                                       document.querySelector('//button[.//span[text()="Return to home screen"]]');
                 if (returnHomeButton) {
                   (window as any).logBot('Detected "Return to home screen" button - bot was kicked');
                   return true;
