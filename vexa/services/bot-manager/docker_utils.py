@@ -251,7 +251,7 @@ async def start_bot_container(
         # Optional keep-alive disabled by default; can be set by env or left None
         "keepAliveIntervalMs": int(os.getenv('KEEP_ALIVE_INTERVAL_MS', '0')) or None,
         "automaticLeave": {
-            "waitingRoomTimeout": 300000,
+            "waitingRoomTimeout": 60000,
             "noOneJoinedTimeout": 5000,
             "everyoneLeftTimeout": 5000
         },
