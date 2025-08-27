@@ -24,7 +24,6 @@ export async function handleGoogleMeet(
     log("Join meeting completed successfully");
     await takeDebugScreenshot(page, "after-join-meeting", "join_meeting_completed");
   } catch (error: any) {
-    console.error("Error during joinMeeting: " + error.message);
     log("Error during joinMeeting: " + error.message + ". Taking screenshot and triggering graceful leave.");
     await takeDebugScreenshot(page, "join-meeting-error", "join_meeting_failed");
     await gracefulLeaveFunction(page, 1, "join_meeting_error");
@@ -45,7 +44,6 @@ export async function handleGoogleMeet(
     });
 
     if (!isAdmitted) {
-      console.error("Bot was not admitted into the meeting");
       log("Bot not admitted. Taking final screenshot and triggering graceful leave with admission_failed reason.");
       await takeDebugScreenshot(page, "admission-failed-final", "admission_failed_final");
       await gracefulLeaveFunction(page, 2, "admission_failed");
@@ -82,7 +80,6 @@ export async function handleGoogleMeet(
     // Pass platform from botConfig to startRecording
     await startRecording(page, botConfig);
   } catch (error: any) {
-    console.error("Error after join attempt (admission/recording setup): " + error.message);
     log("Error after join attempt (admission/recording setup): " + error.message + ". Taking screenshot and triggering graceful leave.");
     await takeDebugScreenshot(page, "post-join-setup-error", "post_join_setup_error");
     // Use a general error code here, as it could be various issues.
@@ -98,54 +95,14 @@ const waitForMeetingAdmission = async (
   timeout: number
 ): Promise<boolean> => {
   try {
-    // Wait for the leave button to appear first
+    // Wait for the leave button to appear (indicates pre-admission - bot is connected but may be in waiting room)
     await page.waitForSelector(leaveButton, { timeout });
+    log("Bot connected to meeting (pre-admission detected via leave button)");
+    await takeDebugScreenshot(page, "pre-admission-detected", "pre_admission_detected");
     
-    // Additional check: ensure we're not in waiting room
-    const isInWaitingRoom = await page.evaluate(() => {
-      // Check for waiting room indicators
-      const waitingMessages = [
-        'Please wait until a meeting host brings you into the call',
-        'Waiting for the meeting host to admit you',
-        'You\'re in the waiting room'
-      ];
-      
-      const bodyText = document.body.innerText;
-      return waitingMessages.some(msg => bodyText.includes(msg));
-    });
-    
-    if (isInWaitingRoom) {
-      log("Bot is in waiting room, waiting for host admission...");
-      await takeDebugScreenshot(page, "waiting-room-detected", "waiting_room_detected");
-      
-      // Wait for admission (check every 2 seconds for up to remaining timeout)
-      const startTime = Date.now();
-      const remainingTimeout = timeout - 5000; // Reserve 5s for initial checks
-      
-      while (Date.now() - startTime < remainingTimeout) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        const stillInWaitingRoom = await page.evaluate(() => {
-          const waitingMessages = [
-            'Please wait until a meeting host brings you into the call',
-            'Waiting for the meeting host to admit you',
-            'You\'re in the waiting room'
-          ];
-          const bodyText = document.body.innerText;
-          return waitingMessages.some(msg => bodyText.includes(msg));
-        });
-        
-        if (!stillInWaitingRoom) {
-          log("Successfully admitted from waiting room");
-          await takeDebugScreenshot(page, "successfully-admitted", "meeting_admitted");
-          return true;
-        }
-      }
-      
-      throw new Error("Bot remained in waiting room - host did not admit within timeout");
-    }
-    
-    log("Successfully admitted to the meeting");
+    // Note: Real admission will be confirmed later when participants are detected
+    // This just means we're connected to the meeting infrastructure
+    log("Pre-admission successful - proceeding to setup recording");
     await takeDebugScreenshot(page, "successfully-admitted", "meeting_admitted");
     return true;
   } catch (error: any) {
@@ -280,12 +237,8 @@ const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
 
 // Modified to have only the actual recording functionality
 const startRecording = async (page: Page, botConfig: BotConfig) => {
-  // Destructure needed fields from botConfig
-  const { meetingUrl, token, connectionId, platform, nativeMeetingId } =
-    botConfig; // nativeMeetingId is now in BotConfig type
-
   //NOTE: The environment variables passed by docker_utils.py will be available to the Node.js process started by your entrypoint.sh.
-  // --- Read GLADIA_API_KEY from Node.js environment ---
+  // Read GLADIA_API_KEY from Node.js environment
   const gladiaApiKey = process.env.GLADIA_API_KEY;
 
   if (!gladiaApiKey) {
@@ -296,7 +249,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
     return; // Or handle more gracefully
   }
   log(`[Node.js] GLADIA_API_KEY is configured for vexa-bot`);
-  // --- ------------------------------------------------- ---
 
   log("Starting actual recording with direct Gladia API connection");
 
@@ -310,11 +262,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
       const { botConfigData, gladiaApiKey } = pageArgs;
       // Destructure from botConfigData as needed
       const {
-        meetingUrl,
-        token,
-        connectionId: originalConnectionId,
-        platform,
-        nativeMeetingId,
         language: initialLanguage,
         task: initialTask,
       } = botConfigData; // Use the nested botConfigData
@@ -379,6 +326,9 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             (window as any).logBot(
               `Found ${mediaElements.length} active media elements.`
             );
+            
+            // Initialize admission tracking variable
+            (window as any).realAdmissionConfirmed = false;
             const audioContext = new AudioContext();
             try {
               (window as any).logBot(`[AudioContext] Initial state: ${audioContext.state}`);
@@ -438,14 +388,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
               `Successfully combined ${sourcesConnected} audio streams.`
             );
 
-            // Keep original connectionId but don't use it for WebSocket UID
-            // const sessionUid = connectionId; // <-- OLD: Reused original connectionId
-            (window as any).logBot(
-              `Original bot connection ID: ${originalConnectionId}`
-            );
-
-            // Add secondary leave button selector for confirmation
-            const secondaryLeaveButtonSelector = `//button[.//span[text()='Leave meeting']] | //button[.//span[text()='Just leave the meeting']]`; // Example, adjust based on actual UI
             // Browser-scope state for current WS config
             let currentWsLanguage = initialLanguage;
             let currentWsTask = initialTask;
@@ -457,9 +399,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             const baseRetryDelay = (configuredInterval && configuredInterval >= 1000) ? configuredInterval : 2000; // Default 2s if not set
 
             let sessionAudioStartTimeMs: number | null = null; // ADDED: For relative speaker timestamps
-            let audioChunksSentCount: number = 0; // ADDED: Watchdog counter
-            let lastAudioChunkSentAtMs: number = 0; // ADDED: Watchdog timestamp
-            let audioWatchdogIntervalHandle: number | null = null; // ADDED: Watchdog interval handle
 
             let currentGladiaSessionId: string | null = null;
             // Helper: structured leave logging without sending any control message to Gladia
@@ -586,14 +525,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
 
                 socket = new WebSocket(wsUrl);
 
-                // Disable aggressive CONNECTING watchdog to avoid flapping
-                let connectionTimeoutHandle: number | null = null;
-
                 socket.onopen = function () {
-                  if (connectionTimeoutHandle !== null) {
-                    clearTimeout(connectionTimeoutHandle); // Clear connection watchdog
-                    connectionTimeoutHandle = null;
-                  }
                   // Log current config being used
                   // Generate NEW UUID for this connection
                   currentSessionUid = generateUUID(); // Update the currentSessionUid
@@ -608,10 +540,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                       `✅ WebSocket connected to Gladia. Ready to send audio.`
                     );
                   }
-
-                  // Audio watchdog removed to prevent premature disconnections
-                  audioChunksSentCount = 0;
-                  lastAudioChunkSentAtMs = 0;
                 };
 
                 socket.onmessage = (event) => {
@@ -634,8 +562,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                       
                       // Send to Redis for processing
                       if (isFinal) {
-                        // TODO: Send final transcript to Redis stream
-                        (window as any).logBot(`📤 Sending final transcript to Redis: "${text}"`);
+                        (window as any).logBot(`📤 Final transcript received: "${text}"`);
                       }
                     }
                   } else if (data.type === "audio_chunk") {
@@ -667,25 +594,12 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 };
 
                 socket.onerror = (event) => {
-                  if (connectionTimeoutHandle !== null) {
-                    clearTimeout(connectionTimeoutHandle);
-                    connectionTimeoutHandle = null;
-                  }
                   (window as any).logBot(
                     `WebSocket error: ${JSON.stringify(event)}`
                   );
                 };
 
                 socket.onclose = (event) => {
-                  if (connectionTimeoutHandle !== null) {
-                    clearTimeout(connectionTimeoutHandle);
-                    connectionTimeoutHandle = null;
-                  }
-                  // Stop audio watchdog
-                  if (audioWatchdogIntervalHandle !== null) {
-                    clearInterval(audioWatchdogIntervalHandle);
-                    audioWatchdogIntervalHandle = null;
-                  }
                   (window as any).logBot(
                     `WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason}`
                   );
@@ -740,7 +654,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
               }
             };
 
-            // --- ADD Function exposed to Node.js for triggering reconfigure ---
+            // Function exposed to Node.js for triggering reconfigure
             (window as any).triggerWebSocketReconfigure = (
               newLang: string | null,
               newTask: string | null
@@ -775,9 +689,8 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 // setupWebSocket();
               }
             };
-            // --- ----------------------------------------------------------- ---
 
-            // --- ADDED: Expose leave function to Node context ---
+            // Expose leave function to Node context
             (window as any).performLeaveAction = async () => {
               (window as any).logBot(
                 "Attempting to leave the meeting from browser context..."
@@ -796,7 +709,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   (window as any).logBot("🔌 Closing WebSocket connection...");
                   socket.close(1000); // Close with code 1000 (normal closure)
                 }
-                // *** FIXED: Use document.evaluate for XPath ***
+                // Use document.evaluate for XPath
                 const primaryLeaveButtonXpath = `//button[@aria-label="Leave call"]`;
                 const secondaryLeaveButtonXpath = `//button[.//span[text()='Leave meeting']] | //button[.//span[text()='Just leave the meeting']]`;
 
@@ -845,13 +758,12 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 return false; // Indicate error during leave
               }
             };
-            // --- --------------------------------------------- ---
 
             setupGladiaSession();
 
-            // --- ADD: Speaker Detection Logic (Adapted from speakers_console_test.js) ---
+            // Speaker Detection Logic (Adapted from speakers_console_test.js)
             // Configuration for speaker detection
-            const participantSelector = 'div[data-participant-id]'; // UPDATED: More specific selector
+            const participantSelector = 'div[data-participant-id]'; // More specific selector
             const speakingClasses = ['Oaajhc', 'HX2H7', 'wEsLMd', 'OgVli']; // Speaking/animation classes
             const silenceClass = 'gjg47c';        // Class indicating the participant is silent
             const nameSelectors = [               // Try these selectors to find participant's name
@@ -860,7 +772,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
 
             // State for tracking speaking status
             const speakingStates = new Map(); // Stores the logical speaking state for each participant ID
-            const activeParticipants = new Map(); // NEW: Central map for all known participants
+            const activeParticipants = new Map(); // Central map for all known participants
 
             // Track current session UID for speaker events
             let currentSessionUid = generateUUID(); // Initialize with a new UID
@@ -928,7 +840,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                                       (nameElement as HTMLElement).innerText || 
                                       nameElement.getAttribute('data-self-name');
                         if (nameText && nameText.trim()) {
-                            // ADDED: Apply forbidden substrings and trimming logic here too
+                            // Apply forbidden substrings and trimming logic here too
                             const forbiddenSubstrings = ["more_vert", "mic_off", "mic", "videocam", "videocam_off", "present_to_all", "devices", "speaker", "speakers", "microphone"];
                             if (!forbiddenSubstrings.some(sub => nameText!.toLowerCase().includes(sub.toLowerCase()))) {
                                 const trimmedName = nameText!.split('\n').pop()?.trim();
@@ -1012,7 +924,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 // or do nothing if currently silent (matching the initialized state).
                 logSpeakerEvent(participantElement, classListForInitialScan);
                 
-                // NEW: Add participant to our central map
+                // Add participant to our central map
                 activeParticipants.set(participantId, { name: getParticipantName(participantElement), element: participantElement });
 
                 const callback = function(mutationsList: MutationRecord[], observer: MutationObserver) {
@@ -1021,8 +933,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                             const targetElement = mutation.target as HTMLElement;
                             if (targetElement.matches(participantSelector) || participantElement.contains(targetElement)) {
                                 const finalTarget = targetElement.matches(participantSelector) ? targetElement : participantElement;
-                                // logSpeakerEvent(finalTarget, finalTarget.classList); // Old line
-                                logSpeakerEvent(finalTarget, targetElement.classList); // Corrected line
+                                logSpeakerEvent(finalTarget, targetElement.classList);
                             }
                         }
                     }
@@ -1088,7 +999,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                                    delete (elementNode as any).dataset.vexaGeneratedId;
                                    (window as any).logBot(`🗑️ Removed observer for: ${participantName} (ID: ${participantId})`);
                                    
-                                   // NEW: Remove participant from our central map
+                                   // Remove participant from our central map
                                    activeParticipants.delete(participantId);
                                 }
                              }
@@ -1102,7 +1013,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 subtree: true
             });
 
-            // --- ADD: Enhanced Leave Function with Session End Signal ---
             (window as any).performLeaveAction = async () => {
                 (window as any).logBot("Attempting to leave the meeting from browser context...");
                 
@@ -1110,7 +1020,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 logLeave('manual_leave_action');
 
                 try {
-                    // *** FIXED: Use document.evaluate for XPath ***
+                    // Use document.evaluate for XPath
                     const primaryLeaveButtonXpath = `//button[@aria-label="Leave call"]`;
                     const secondaryLeaveButtonXpath = `//button[.//span[text()='Leave meeting']] | //button[.//span[text()='Just leave the meeting']]`;
 
@@ -1159,9 +1069,8 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   return false; // Indicate error during leave
                 }
             };
-            // --- --------------------------------------------- ---
 
-            // FIXED: Revert to original audio processing that works with whisperlive
+            // Revert to original audio processing that works with whisperlive
             // but use our combined stream as the input source
             const audioDataCache = [];
             const mediaStream = audioContext.createMediaStreamSource(stream); // Use our combined stream
@@ -1239,8 +1148,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                     // Send real audio chunk
                     socket.send(pcmData.buffer);
                     (window as any).logBot(`🎵 Audio chunk sent: ${pcmData.length} samples (PCM 16-bit) - Max amplitude: ${maxAmplitude} - Real audio: YES`);
-                    audioChunksSentCount++;
-                    lastAudioChunkSentAtMs = Date.now();
                 } else {
                     // Silent period - send heartbeat to prevent Gladia timeout
                     // Create minimal noise heartbeat (very low amplitude)
@@ -1252,8 +1159,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                     
                     socket.send(heartbeatData.buffer);
                     (window as any).logBot(`💗 Heartbeat sent: ${heartbeatData.length} samples (PCM 16-bit) - Max amplitude: ${maxAmplitude} - Keeping session alive`);
-                    audioChunksSentCount++;
-                    lastAudioChunkSentAtMs = Date.now();
                 }
               }
             };
@@ -1362,26 +1267,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             // Handle popups first
             await handleGotItPopups();
 
-            // Check if we're still in waiting room (safety check)
-            const isStillInWaitingRoom = () => {
-              const waitingMessages = [
-                'Please wait until a meeting host brings you into the call',
-                'Waiting for the meeting host to admit you',
-                'You\'re in the waiting room'
-              ];
-              const bodyText = document.body.innerText;
-              return waitingMessages.some(msg => bodyText.includes(msg));
-            };
-
-            if (isStillInWaitingRoom()) {
-              recorder.disconnect();
-              return reject(
-                new Error(
-                  "[BOT Inner Error] Bot is still in waiting room after admission check. Host may not have admitted the bot yet."
-                )
-              );
-            }
-
             // Click the "People" button with retries
             let peopleButton = null;
             let attempts = 0;
@@ -1422,7 +1307,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             (peopleButton as HTMLElement).click();
 
             // Monitor participant list every 5 seconds
-            let aloneTime = 0; // legacy variable, no longer used for leaving
             let noParticipantsMs = 0;
             let aloneWithBotMs = 0;
             const everyoneLeftTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.everyoneLeftTimeout ? (botConfigData as any).automaticLeave.everyoneLeftTimeout : 60000;
@@ -1522,12 +1406,18 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   return;
                 }
 
-                // UPDATED: Use the size of our central map as the source of truth
+                // Use the size of our central map as the source of truth
                 let count = 0; // Declare count outside try-catch
                 try {
                   count = activeParticipants.size;
                   const participantIds = Array.from(activeParticipants.keys());
                   (window as any).logBot(`Participant check: Found ${count} unique participants from central list. IDs: ${JSON.stringify(participantIds)}`);
+
+                  // Check if this is the first time we detect participants (real admission confirmation)
+                  if (!(window as any).realAdmissionConfirmed && count > 0) {
+                    (window as any).realAdmissionConfirmed = true;
+                    (window as any).logBot(`🎉 REAL ADMISSION CONFIRMED: Found ${count} participants. Bot is truly admitted to the meeting!`);
+                  }
 
                   // Reset failure count on successful detection
                   detectionFailures = 0;
@@ -1632,27 +1522,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
     ); // Pass arguments to page.evaluate
 };
 
-// Remove the compatibility shim 'recordMeeting' if no longer needed,
-// otherwise, ensure it constructs a valid BotConfig object.
-// Example if keeping:
-/*
-const recordMeeting = async (page: Page, meetingUrl: string, token: string, connectionId: string, platform: "google_meet" | "zoom" | "teams") => {
-  await prepareForRecording(page);
-  // Construct a minimal BotConfig - adjust defaults as needed
-  const dummyConfig: BotConfig = {
-      platform: platform,
-      meetingUrl: meetingUrl,
-      botName: "CompatibilityBot",
-      token: token,
-      connectionId: connectionId,
-      nativeMeetingId: "", // Might need to derive this if possible
-      automaticLeave: { waitingRoomTimeout: 300000, noOneJoinedTimeout: 300000, everyoneLeftTimeout: 300000 },
-  };
-  await startRecording(page, dummyConfig);
-};
-*/
-
-// --- ADDED: Exported function to trigger leave from Node.js ---
 export async function leaveGoogleMeet(page: Page): Promise<boolean> {
   log("[leaveGoogleMeet] Triggering leave action in browser context...");
   if (!page || page.isClosed()) {
@@ -1668,9 +1537,6 @@ export async function leaveGoogleMeet(page: Page): Promise<boolean> {
         (window as any).logBot?.(
           "[Node Eval Error] performLeaveAction function not found on window."
         );
-        console.error(
-          "[Node Eval Error] performLeaveAction function not found on window."
-        );
         return false;
       }
     });
@@ -1683,4 +1549,3 @@ export async function leaveGoogleMeet(page: Page): Promise<boolean> {
     return false;
   }
 }
-// --- ------------------------------------------------------- ---
