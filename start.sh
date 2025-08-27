@@ -66,8 +66,8 @@ if [ -z "$USER_EXISTS" ]; then
         if [ -n "$API_TOKEN" ]; then
             echo "✅ API token created: $API_TOKEN"
             
-            # Update .env file with the new API token
-            sed -i.bak "s/API_KEY=.*/API_KEY=$API_TOKEN/" .env
+            # Update .env file with the new API token (preserve GLADIA_API_KEY)
+            sed -i.bak "s/^API_KEY=.*/API_KEY=$API_TOKEN/" .env
             echo "📝 Updated .env file with new API token"
             
             # Restart services to pick up new token
