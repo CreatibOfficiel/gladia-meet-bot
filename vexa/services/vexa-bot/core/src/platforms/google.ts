@@ -98,15 +98,61 @@ const waitForMeetingAdmission = async (
   timeout: number
 ): Promise<boolean> => {
   try {
+    // Wait for the leave button to appear first
     await page.waitForSelector(leaveButton, { timeout });
+    
+    // Additional check: ensure we're not in waiting room
+    const isInWaitingRoom = await page.evaluate(() => {
+      // Check for waiting room indicators
+      const waitingMessages = [
+        'Please wait until a meeting host brings you into the call',
+        'Waiting for the meeting host to admit you',
+        'You\'re in the waiting room'
+      ];
+      
+      const bodyText = document.body.innerText;
+      return waitingMessages.some(msg => bodyText.includes(msg));
+    });
+    
+    if (isInWaitingRoom) {
+      log("Bot is in waiting room, waiting for host admission...");
+      await takeDebugScreenshot(page, "waiting-room-detected", "waiting_room_detected");
+      
+      // Wait for admission (check every 2 seconds for up to remaining timeout)
+      const startTime = Date.now();
+      const remainingTimeout = timeout - 5000; // Reserve 5s for initial checks
+      
+      while (Date.now() - startTime < remainingTimeout) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        const stillInWaitingRoom = await page.evaluate(() => {
+          const waitingMessages = [
+            'Please wait until a meeting host brings you into the call',
+            'Waiting for the meeting host to admit you',
+            'You\'re in the waiting room'
+          ];
+          const bodyText = document.body.innerText;
+          return waitingMessages.some(msg => bodyText.includes(msg));
+        });
+        
+        if (!stillInWaitingRoom) {
+          log("Successfully admitted from waiting room");
+          await takeDebugScreenshot(page, "successfully-admitted", "meeting_admitted");
+          return true;
+        }
+      }
+      
+      throw new Error("Bot remained in waiting room - host did not admit within timeout");
+    }
+    
     log("Successfully admitted to the meeting");
     await takeDebugScreenshot(page, "successfully-admitted", "meeting_admitted");
     return true;
-  } catch {
+  } catch (error: any) {
     log("Failed to get admitted - taking screenshot for debug");
     await takeDebugScreenshot(page, "admission-failed", "admission_timeout");
     throw new Error(
-      "Bot was not admitted into the meeting within the timeout period"
+      "Bot was not admitted into the meeting within the timeout period: " + error.message
     );
   }
 };
@@ -1176,12 +1222,12 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   const sample = Math.max(-1, Math.min(1, resampledData[i]));
                   pcmData[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
                 }
-                // Debug: Vérifier si l'audio contient du son
+                // Calculate amplitude and detect if there's real audio
                 let hasAudio = false;
                 let maxAmplitude = 0;
                 for (let i = 0; i < pcmData.length; i++) {
                     const amplitude = Math.abs(pcmData[i]);
-                    if (amplitude > 40) { // Slightly lower threshold to avoid false silence
+                    if (amplitude > 40) { // Threshold for real audio detection
                         hasAudio = true;
                     }
                     if (amplitude > maxAmplitude) {
@@ -1189,14 +1235,25 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                     }
                 }
                 
-                // Don't send audio chunks if there's no audio (silence)
                 if (hasAudio) {
-                    socket.send(pcmData.buffer); // send the PCM audio buffer to Gladia socket
-                    (window as any).logBot(`🎵 Audio chunk sent: ${pcmData.length} samples (PCM 16-bit) - Max amplitude: ${maxAmplitude} - Has audio: ${hasAudio ? 'YES' : 'NO'}`);
+                    // Send real audio chunk
+                    socket.send(pcmData.buffer);
+                    (window as any).logBot(`🎵 Audio chunk sent: ${pcmData.length} samples (PCM 16-bit) - Max amplitude: ${maxAmplitude} - Real audio: YES`);
                     audioChunksSentCount++;
                     lastAudioChunkSentAtMs = Date.now();
                 } else {
-                    (window as any).logBot(`🔇 Silent chunk skipped: ${pcmData.length} samples (PCM 16-bit) - Max amplitude: ${maxAmplitude} - Has audio: ${hasAudio ? 'YES' : 'NO'}`);
+                    // Silent period - send heartbeat to prevent Gladia timeout
+                    // Create minimal noise heartbeat (very low amplitude)
+                    const heartbeatData = new Int16Array(pcmData.length);
+                    for (let i = 0; i < heartbeatData.length; i++) {
+                        // Add very minimal random noise (amplitude ~1-5)
+                        heartbeatData[i] = Math.floor(Math.random() * 10) - 5;
+                    }
+                    
+                    socket.send(heartbeatData.buffer);
+                    (window as any).logBot(`💗 Heartbeat sent: ${heartbeatData.length} samples (PCM 16-bit) - Max amplitude: ${maxAmplitude} - Keeping session alive`);
+                    audioChunksSentCount++;
+                    lastAudioChunkSentAtMs = Date.now();
                 }
               }
             };
@@ -1305,18 +1362,63 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             // Handle popups first
             await handleGotItPopups();
 
-            // Click the "People" button
-            const peopleButton = document.querySelector(
-              'button[aria-label^="People"]'
-            );
+            // Check if we're still in waiting room (safety check)
+            const isStillInWaitingRoom = () => {
+              const waitingMessages = [
+                'Please wait until a meeting host brings you into the call',
+                'Waiting for the meeting host to admit you',
+                'You\'re in the waiting room'
+              ];
+              const bodyText = document.body.innerText;
+              return waitingMessages.some(msg => bodyText.includes(msg));
+            };
+
+            if (isStillInWaitingRoom()) {
+              recorder.disconnect();
+              return reject(
+                new Error(
+                  "[BOT Inner Error] Bot is still in waiting room after admission check. Host may not have admitted the bot yet."
+                )
+              );
+            }
+
+            // Click the "People" button with retries
+            let peopleButton = null;
+            let attempts = 0;
+            const maxAttempts = 3;
+            
+            while (!peopleButton && attempts < maxAttempts) {
+              attempts++;
+              
+              // Try different selectors for People button
+              const selectors = [
+                'button[aria-label^="People"]',
+                'button[aria-label*="People"]',
+                'button[data-tooltip*="People"]',
+                '[role="button"][aria-label*="People"]'
+              ];
+              
+              for (const selector of selectors) {
+                peopleButton = document.querySelector(selector);
+                if (peopleButton) break;
+              }
+              
+              if (!peopleButton && attempts < maxAttempts) {
+                (window as any).logBot(`People button not found (attempt ${attempts}/${maxAttempts}), waiting 1s before retry...`);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+            }
+            
             if (!peopleButton) {
               recorder.disconnect();
               return reject(
                 new Error(
-                  "[BOT Inner Error] 'People' button not found. Update the selector."
+                  "[BOT Inner Error] 'People' button not found after " + maxAttempts + " attempts. UI may have changed or bot may not be fully admitted to meeting."
                 )
               );
             }
+            
+            (window as any).logBot('People button found, clicking...');
             (peopleButton as HTMLElement).click();
 
             // Monitor participant list every 5 seconds
