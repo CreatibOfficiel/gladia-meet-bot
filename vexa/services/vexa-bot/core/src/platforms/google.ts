@@ -9,7 +9,6 @@ export async function handleGoogleMeet(
   page: Page,
   gracefulLeaveFunction: (page: Page | null, exitCode: number, reason: string) => Promise<void>
 ): Promise<void> {
-  const leaveButton = `//button[@aria-label="Leave call"]`;
 
   if (!botConfig.meetingUrl) {
     log("Error: Meeting URL is required for Google Meet but is null.");
@@ -36,7 +35,6 @@ export async function handleGoogleMeet(
     // Wait for admission to the meeting FIRST
     const isAdmitted = await waitForMeetingAdmission(
       page,
-      leaveButton,
       botConfig.automaticLeave.waitingRoomTimeout
     ).catch((error) => {
       log("Meeting admission failed: " + error.message);
@@ -88,28 +86,25 @@ export async function handleGoogleMeet(
   }
 }
 
-// New function to wait for meeting admission
 const waitForMeetingAdmission = async (
   page: Page,
-  leaveButton: string,
   timeout: number
 ): Promise<boolean> => {
   try {
-    // Wait for the leave button to appear (indicates pre-admission - bot is connected but may be in waiting room)
-    await page.waitForSelector(leaveButton, { timeout });
-    log("Bot connected to meeting (pre-admission detected via leave button)");
-    await takeDebugScreenshot(page, "pre-admission-detected", "pre_admission_detected");
+    log("Waiting for real meeting admission (People button detection)...");
     
-    // Note: Real admission will be confirmed later when participants are detected
-    // This just means we're connected to the meeting infrastructure
-    log("Pre-admission successful - proceeding to setup recording");
-    await takeDebugScreenshot(page, "successfully-admitted", "meeting_admitted");
+    // Wait for the "People" button to appear (indicates true admission - bot is in active meeting)
+    await page.waitForSelector('button[aria-label^="People"]', { timeout });
+    
+    log("✅ Bot truly admitted to meeting (People button found)");
+    await takeDebugScreenshot(page, "truly-admitted", "people_button_detected");
+    
     return true;
   } catch (error: any) {
-    log("Failed to get admitted - taking screenshot for debug");
-    await takeDebugScreenshot(page, "admission-failed", "admission_timeout");
+    log("❌ Failed to get truly admitted - People button not found");
+    await takeDebugScreenshot(page, "admission-failed", "people_button_timeout");
     throw new Error(
-      "Bot was not admitted into the meeting within the timeout period: " + error.message
+      "Bot was not truly admitted into the meeting (People button not found): " + error.message
     );
   }
 };
@@ -1266,39 +1261,20 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
 
             // Handle popups first
             await handleGotItPopups();
-
-            // Click the "People" button with retries
-            let peopleButton = null;
-            let attempts = 0;
-            const maxAttempts = 3;
             
-            while (!peopleButton && attempts < maxAttempts) {
-              attempts++;
-              
-              // Try different selectors for People button
-              const selectors = [
-                'button[aria-label^="People"]',
-                'button[aria-label*="People"]',
-                'button[data-tooltip*="People"]',
-                '[role="button"][aria-label*="People"]'
-              ];
-              
-              for (const selector of selectors) {
-                peopleButton = document.querySelector(selector);
-                if (peopleButton) break;
-              }
-              
-              if (!peopleButton && attempts < maxAttempts) {
-                (window as any).logBot(`People button not found (attempt ${attempts}/${maxAttempts}), waiting 1s before retry...`);
-                await new Promise(resolve => setTimeout(resolve, 1000));
-              }
-            }
+            // People button already confirmed during admission check - proceeding with recording setup
+            (window as any).logBot('People button already confirmed during admission - proceeding with recording setup');
+            
+            // Click the "People" button to open participant list
+            const peopleButton = document.querySelector(
+              'button[aria-label^="People"]'
+            );
             
             if (!peopleButton) {
               recorder.disconnect();
               return reject(
                 new Error(
-                  "[BOT Inner Error] 'People' button not found after " + maxAttempts + " attempts. UI may have changed or bot may not be fully admitted to meeting."
+                  "[BOT Inner Error] 'People' button disappeared after admission. This should not happen."
                 )
               );
             }
