@@ -1295,10 +1295,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             const everyoneLeftTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.everyoneLeftTimeout ? (botConfigData as any).automaticLeave.everyoneLeftTimeout : 60000;
             const aloneTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.noOneJoinedTimeout ? (botConfigData as any).automaticLeave.noOneJoinedTimeout : 5000; // 5s when alone
             const humanInactivityTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.humanInactivityTimeout ? (botConfigData as any).automaticLeave.humanInactivityTimeout : 600000; // 10 minutes default
-            const maxSessionDurationMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.maxSessionDuration ? (botConfigData as any).automaticLeave.maxSessionDuration : 3600000; // 1 hour default
             
-            // Track session start time for max duration limit
-            const sessionStartTime = Date.now();
             let lastHumanActivityTime = Date.now(); // Track last time we detected human speaking activity
             
             // Log timeout configurations
@@ -1306,7 +1303,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             (window as any).logBot(`  - Everyone left: ${Math.round(everyoneLeftTimeoutMs / 1000)}s`);
             (window as any).logBot(`  - Alone with bot: ${Math.round(aloneTimeoutMs / 1000)}s`);
             (window as any).logBot(`  - Human inactivity: ${Math.round(humanInactivityTimeoutMs / 1000)}s`);
-            (window as any).logBot(`  - Max session duration: ${Math.round(maxSessionDurationMs / 1000)}s`);
             
             // Enhanced participant detection with failure resilience like ScreenApp
             let detectionFailures = 0;
@@ -1496,21 +1492,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   return;
                 }
 
-                // Check for maximum session duration
-                const sessionDuration = currentTime - sessionStartTime;
-                if (sessionDuration >= maxSessionDurationMs) {
-                  (window as any).logBot(`[MaxDuration] Session duration limit reached: ${Math.round(sessionDuration / 1000)}s (threshold: ${Math.round(maxSessionDurationMs / 1000)}s). Leaving meeting...`);
-                  logLeave('max_session_duration_timeout', { 
-                    session_duration_ms: sessionDuration,
-                    threshold_ms: maxSessionDurationMs 
-                  });
-                  clearInterval(checkInterval);
-                  recorder.disconnect();
-                  if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
-                  (window as any).triggerNodeGracefulLeave();
-                  resolve();
-                  return;
-                }
 
               } catch (error: any) {
                 (window as any).logBot('Error in participant check interval: ' + error.message);

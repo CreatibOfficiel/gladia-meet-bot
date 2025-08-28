@@ -17,8 +17,7 @@ export const BotConfigSchema = z.object({
     waitingRoomTimeout: z.number().int(),
     noOneJoinedTimeout: z.number().int(),
     everyoneLeftTimeout: z.number().int(),
-    humanInactivityTimeout: z.number().int().optional(),    // Optional: timeout when no human activity
-    maxSessionDuration: z.number().int().optional()         // Optional: maximum session duration
+    humanInactivityTimeout: z.number().int().optional()     // Optional: timeout when no human activity
   }),
   reconnectionIntervalMs: z.number().int().optional(), // ADDED: Optional reconnection interval
   meeting_id: z.number().int().optional(), // Allow optional internal ID

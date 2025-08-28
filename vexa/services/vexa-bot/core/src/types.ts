@@ -12,8 +12,7 @@ export type BotConfig = {
     waitingRoomTimeout: number,
     noOneJoinedTimeout: number,
     everyoneLeftTimeout: number,
-    humanInactivityTimeout?: number,    // Timeout when no human activity (default: 10 minutes)
-    maxSessionDuration?: number         // Maximum session duration (default: 1 hour)
+    humanInactivityTimeout?: number     // Timeout when no human activity (default: 10 minutes)
   },
   reconnectionIntervalMs?: number,
   keepAliveIntervalMs?: number,
