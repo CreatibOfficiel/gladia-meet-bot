@@ -457,7 +457,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                       sample_rate: 16000,
                       channels: 1,
                       language_config: {
-                        languages: [], // Auto-détection de langue
+                        languages: ["en", "fr"],
                         code_switching: true,
                       },
                       pre_processing: {
@@ -867,6 +867,13 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
 
                 const participantId = getParticipantId(participantElement);
                 const participantName = getParticipantName(participantElement);
+
+                // Update last human activity time when someone starts speaking
+                // (Only humans speak - bots don't trigger SPEAKER_START events)
+                if (eventType === "SPEAKER_START") {
+                    lastHumanActivityTime = eventAbsoluteTimeMs;
+                    (window as any).logBot(`[HumanActivity] Human activity detected: ${participantName || 'Unknown'} started speaking. Resetting inactivity timer.`);
+                }
 
                 // Do not send legacy speaker_activity to Gladia (unsupported). Log locally only.
                 (window as any).logBot(`[RelativeTime] (disabled) speaker_activity ${eventType} for ${participantName} (${participantId}). RelativeTs: ${relativeTimestampMs}ms. UID: ${currentSessionUid}.`);
@@ -1287,6 +1294,20 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             let aloneWithBotMs = 0;
             const everyoneLeftTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.everyoneLeftTimeout ? (botConfigData as any).automaticLeave.everyoneLeftTimeout : 60000;
             const aloneTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.noOneJoinedTimeout ? (botConfigData as any).automaticLeave.noOneJoinedTimeout : 5000; // 5s when alone
+            const humanInactivityTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.humanInactivityTimeout ? (botConfigData as any).automaticLeave.humanInactivityTimeout : 600000; // 10 minutes default
+            const maxSessionDurationMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.maxSessionDuration ? (botConfigData as any).automaticLeave.maxSessionDuration : 3600000; // 1 hour default
+            
+            // Track session start time for max duration limit
+            const sessionStartTime = Date.now();
+            let lastHumanActivityTime = Date.now(); // Track last time we detected human speaking activity
+            
+            // Log timeout configurations
+            (window as any).logBot(`[Timeouts] Configuration loaded:`);
+            (window as any).logBot(`  - Everyone left: ${Math.round(everyoneLeftTimeoutMs / 1000)}s`);
+            (window as any).logBot(`  - Alone with bot: ${Math.round(aloneTimeoutMs / 1000)}s`);
+            (window as any).logBot(`  - Human inactivity: ${Math.round(humanInactivityTimeoutMs / 1000)}s`);
+            (window as any).logBot(`  - Max session duration: ${Math.round(maxSessionDurationMs / 1000)}s`);
+            
             // Enhanced participant detection with failure resilience like ScreenApp
             let detectionFailures = 0;
             const maxDetectionFailures = 10; // Track up to 10 consecutive failures
@@ -1457,6 +1478,40 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   noParticipantsMs = 0;
                   aloneWithBotMs = 0;
                 }
+
+                // Check for human inactivity timeout
+                const currentTime = Date.now();
+                const timeSinceLastHumanActivity = currentTime - lastHumanActivityTime;
+                if (timeSinceLastHumanActivity >= humanInactivityTimeoutMs) {
+                  (window as any).logBot(`[HumanInactivity] No human activity for ${Math.round(timeSinceLastHumanActivity / 1000)}s (threshold: ${Math.round(humanInactivityTimeoutMs / 1000)}s). Leaving meeting...`);
+                  logLeave('human_inactivity_timeout', { 
+                    inactivity_duration_ms: timeSinceLastHumanActivity,
+                    threshold_ms: humanInactivityTimeoutMs 
+                  });
+                  clearInterval(checkInterval);
+                  recorder.disconnect();
+                  if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
+                  (window as any).triggerNodeGracefulLeave();
+                  resolve();
+                  return;
+                }
+
+                // Check for maximum session duration
+                const sessionDuration = currentTime - sessionStartTime;
+                if (sessionDuration >= maxSessionDurationMs) {
+                  (window as any).logBot(`[MaxDuration] Session duration limit reached: ${Math.round(sessionDuration / 1000)}s (threshold: ${Math.round(maxSessionDurationMs / 1000)}s). Leaving meeting...`);
+                  logLeave('max_session_duration_timeout', { 
+                    session_duration_ms: sessionDuration,
+                    threshold_ms: maxSessionDurationMs 
+                  });
+                  clearInterval(checkInterval);
+                  recorder.disconnect();
+                  if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
+                  (window as any).triggerNodeGracefulLeave();
+                  resolve();
+                  return;
+                }
+
               } catch (error: any) {
                 (window as any).logBot('Error in participant check interval: ' + error.message);
                 // Don't clear interval on error, just log it
