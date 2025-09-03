@@ -324,6 +324,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             
             // Initialize admission tracking variable
             (window as any).realAdmissionConfirmed = false;
+            (window as any).gladiaInitialized = false;
             const audioContext = new AudioContext();
             try {
               (window as any).logBot(`[AudioContext] Initial state: ${audioContext.state}`);
@@ -619,7 +620,12 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                     (window as any).logBot(
                       `Retrying WebSocket connection (attempt ${retryCount}/${maxRetries})...`
                     );
-                    await setupGladiaSession();
+                    // Only retry if Gladia was already initialized (i.e., admission was confirmed)
+                    if ((window as any).gladiaInitialized) {
+                      await setupGladiaSession();
+                    } else {
+                      (window as any).logBot(`❌ Cannot retry WebSocket - admission not yet confirmed`);
+                    }
                   }, delay);
                 };
               } catch (e: any) {
@@ -644,7 +650,12 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   (window as any).logBot(
                     `Retrying WebSocket connection (attempt ${retryCount}/${maxRetries})...`
                   );
-                  await setupGladiaSession();
+                  // Only retry if Gladia was already initialized (i.e., admission was confirmed)
+                  if ((window as any).gladiaInitialized) {
+                    await setupGladiaSession();
+                  } else {
+                    (window as any).logBot(`❌ Cannot retry WebSocket - admission not yet confirmed`);
+                  }
                 }, delay);
               }
             };
@@ -753,8 +764,6 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 return false; // Indicate error during leave
               }
             };
-
-            setupGladiaSession();
 
             // Speaker Detection Logic (Adapted from speakers_console_test.js)
             // Configuration for speaker detection
@@ -1410,6 +1419,19 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   if (!(window as any).realAdmissionConfirmed && count > 0) {
                     (window as any).realAdmissionConfirmed = true;
                     (window as any).logBot(`🎉 REAL ADMISSION CONFIRMED: Found ${count} participants. Bot is truly admitted to the meeting!`);
+                    
+                    // Initialize Gladia session after real admission is confirmed
+                    if (!(window as any).gladiaInitialized) {
+                      (window as any).gladiaInitialized = true;
+                      (window as any).logBot(`🎤 Initializing Gladia session after admission confirmation...`);
+                      setupGladiaSession().then(() => {
+                        (window as any).logBot(`✅ Gladia session initialized after admission confirmation!`);
+                      }).catch((error: any) => {
+                        (window as any).logBot(`❌ Error initializing Gladia session: ${error.message}`);
+                        // Reset flag to allow retry
+                        (window as any).gladiaInitialized = false;
+                      });
+                    }
                   }
 
                   // Reset failure count on successful detection
