@@ -1312,6 +1312,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             (window as any).logBot(`  - Everyone left: ${Math.round(everyoneLeftTimeoutMs / 1000)}s`);
             (window as any).logBot(`  - Alone with bot: ${Math.round(aloneTimeoutMs / 1000)}s`);
             (window as any).logBot(`  - Human inactivity: ${Math.round(humanInactivityTimeoutMs / 1000)}s`);
+            (window as any).logBot(`[Transcription] Gladia will initialize only with 3+ participants (2 humans + bot minimum)`);
             
             // Enhanced participant detection with failure resilience like ScreenApp
             let detectionFailures = 0;
@@ -1419,19 +1420,19 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   if (!(window as any).realAdmissionConfirmed && count > 0) {
                     (window as any).realAdmissionConfirmed = true;
                     (window as any).logBot(`🎉 REAL ADMISSION CONFIRMED: Found ${count} participants. Bot is truly admitted to the meeting!`);
-                    
-                    // Initialize Gladia session after real admission is confirmed
-                    if (!(window as any).gladiaInitialized) {
-                      (window as any).gladiaInitialized = true;
-                      (window as any).logBot(`🎤 Initializing Gladia session after admission confirmation...`);
-                      setupGladiaSession().then(() => {
-                        (window as any).logBot(`✅ Gladia session initialized after admission confirmation!`);
-                      }).catch((error: any) => {
+                  }
+                  
+                  // Initialize Gladia session only when we have at least 3 participants (2 humans + bot)
+                  if (!(window as any).gladiaInitialized && count >= 3) {
+                    (window as any).gladiaInitialized = true;
+                    (window as any).logBot(`🎤 Minimum participants reached (${count}/3). Initializing Gladia session...`);
+                    setupGladiaSession().then(() => {
+                      (window as any).logBot(`✅ Gladia session initialized with ${count} participants!`);
+                    }).catch((error: any) => {
                         (window as any).logBot(`❌ Error initializing Gladia session: ${error.message}`);
                         // Reset flag to allow retry
                         (window as any).gladiaInitialized = false;
                       });
-                    }
                   }
 
                   // Reset failure count on successful detection
