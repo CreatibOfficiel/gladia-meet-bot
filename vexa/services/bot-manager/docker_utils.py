@@ -280,6 +280,7 @@ async def start_bot_container(
         f"LOG_LEVEL={os.getenv('LOG_LEVEL', 'INFO').upper()}",
         f"BOT_LOG_DIR=/app/logs",  # Location inside container for per-call logs
         f"BOT_SCREENSHOTS_DIR=/app/screenshots",  # Location inside container for screenshots
+        f"BOT_ENABLE_SCREENSHOTS={os.getenv('BOT_ENABLE_SCREENSHOTS', 'true').lower()}",  # Control screenshot feature
         f"BOT_MEETING_ID={meeting_id}",  # Pass meeting ID for logging
         f"BOT_SESSION_UID={connection_id}"  # Pass session UID for logging
     ]

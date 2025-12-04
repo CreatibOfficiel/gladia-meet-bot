@@ -15,6 +15,7 @@ services:
     environment:
       - BOT_LOGS_HOST_DIR=/opt/vexa-bot/persistent_data/logs
       - BOT_SCREENSHOTS_HOST_DIR=/opt/vexa-bot/persistent_data/screenshots
+      - BOT_ENABLE_SCREENSHOTS=${BOT_ENABLE_SCREENSHOTS:-false}
     volumes:
       - ./persistent_data:/opt/vexa-bot/persistent_data
     networks:

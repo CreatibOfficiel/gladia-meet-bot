@@ -10,10 +10,17 @@ import * as path from "path";
  * @param reason - Reason for taking the screenshot
  */
 export async function takeDebugScreenshot(
-  page: Page, 
-  filename: string, 
+  page: Page,
+  filename: string,
   reason: string = "debug"
 ): Promise<void> {
+  // Check if screenshots are enabled
+  const enableScreenshots = process.env.BOT_ENABLE_SCREENSHOTS !== 'false';
+  if (!enableScreenshots) {
+    log(`Screenshots disabled - skipping: ${filename} (reason: ${reason})`);
+    return;
+  }
+
   try {
     if (!page || page.isClosed()) {
       log(`Cannot take screenshot: page is ${page ? 'closed' : 'null'}`);
