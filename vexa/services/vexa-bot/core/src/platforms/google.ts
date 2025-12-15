@@ -91,82 +91,21 @@ const waitForMeetingAdmission = async (
   timeout: number
 ): Promise<boolean> => {
   try {
-    log("=== STARTING ADMISSION DETECTION DIAGNOSTIC ===");
-    await takeDebugScreenshot(page, "before-admission-check", "pre_admission_check");
+    log("Waiting for meeting admission (Leave button detection)...");
 
-    // List ALL buttons on the page with their attributes
-    log("Scanning ALL buttons on the page...");
-    const allButtons = await page.$$('button');
-    log(`Found ${allButtons.length} total buttons on the page`);
-
-    for (let i = 0; i < allButtons.length; i++) {
-      const button = allButtons[i];
-      try {
-        const ariaLabel = await button.getAttribute('aria-label');
-        const dataTooltip = await button.getAttribute('data-tooltip');
-        const textContent = await button.textContent();
-        const className = await button.getAttribute('class');
-        const isVisible = await button.isVisible();
-
-        log(`Button ${i + 1}/${allButtons.length}:
-          - aria-label: ${ariaLabel || 'NONE'}
-          - data-tooltip: ${dataTooltip || 'NONE'}
-          - text: ${textContent?.trim().substring(0, 50) || 'NONE'}
-          - class: ${className?.substring(0, 100) || 'NONE'}
-          - visible: ${isVisible}`);
-      } catch (err: any) {
-        log(`Error inspecting button ${i + 1}: ${err.message}`);
-      }
-    }
-
-    // Try to find specific important buttons
-    log("Looking for key buttons...");
-
-    // Check for "Leave call" button
-    const leaveButton = await page.$('button[aria-label="Leave call"]');
-    log(`"Leave call" button: ${leaveButton ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
-    if (leaveButton) {
-      await takeDebugScreenshot(page, "leave-button-found", "leave_button_detected");
-    }
-
-    // Check for various "People" button variations
-    const peopleSelectors = [
-      'button[aria-label="People"]',
-      'button[aria-label^="People"]',
-      'button[aria-label*="People"]',
-      'button[aria-label="Show everyone"]',
-      'button[data-tooltip*="People"]',
-      'button[data-tooltip*="participant"]'
-    ];
-
-    for (const selector of peopleSelectors) {
-      const element = await page.$(selector);
-      log(`Selector "${selector}": ${element ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
-      if (element) {
-        await takeDebugScreenshot(page, `people-button-${selector.replace(/[^a-z0-9]/gi, '-')}`, `people_variant_detected`);
-      }
-    }
-
-    // Check participant list area
-    const participantList = await page.$('[role="list"]');
-    log(`Participant list container: ${participantList ? 'FOUND ✅' : 'NOT FOUND ❌'}`);
-
-    // Take final diagnostic screenshot
-    await takeDebugScreenshot(page, "admission-diagnostic-complete", "diagnostic_complete");
-
-    log("=== DIAGNOSTIC COMPLETE - Check screenshots and logs ===");
-
-    // For now, use Leave button as fallback to prevent timeout
-    log("Using Leave button as temporary admission indicator...");
+    // Wait for "Leave call" button which appears when bot is admitted to the meeting
     await page.waitForSelector('button[aria-label="Leave call"]', { timeout });
-    log("✅ Leave button detected - bot is connected to meeting infrastructure");
+
+    log("✅ Bot admitted to meeting (Leave button detected)");
+    await takeDebugScreenshot(page, "admitted-to-meeting", "leave_button_detected");
 
     return true;
-
   } catch (error: any) {
-    log("❌ DIAGNOSTIC FAILED - even Leave button not found");
-    await takeDebugScreenshot(page, "diagnostic-error", "diagnostic_error");
-    throw new Error("Admission diagnostic failed: " + error.message);
+    log("❌ Failed to detect admission - Leave button not found");
+    await takeDebugScreenshot(page, "admission-failed", "leave_button_timeout");
+    throw new Error(
+      "Bot admission failed (Leave button not found): " + error.message
+    );
   }
 };
 
