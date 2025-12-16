@@ -1278,25 +1278,17 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             // Handle popups first
             await handleGotItPopups();
             
-            // People button already confirmed during admission check - proceeding with recording setup
-            (window as any).logBot('People button already confirmed during admission - proceeding with recording setup');
-            
-            // Click the "People" button to open participant list
+            // Try to click the "People" button to open participant list (optional)
             const peopleButton = document.querySelector(
               'button[aria-label^="People"]'
             );
-            
-            if (!peopleButton) {
-              recorder.disconnect();
-              return reject(
-                new Error(
-                  "[BOT Inner Error] 'People' button disappeared after admission. This should not happen."
-                )
-              );
+
+            if (peopleButton) {
+              (window as any).logBot('People button found, clicking...');
+              (peopleButton as HTMLElement).click();
+            } else {
+              (window as any).logBot('People button not found - participant list may already be open or interface has changed');
             }
-            
-            (window as any).logBot('People button found, clicking...');
-            (peopleButton as HTMLElement).click();
 
             // Monitor participant list every 5 seconds
             let noParticipantsMs = 0;
