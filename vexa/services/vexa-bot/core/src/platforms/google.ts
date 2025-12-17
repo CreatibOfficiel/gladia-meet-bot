@@ -1277,20 +1277,9 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
 
             // Handle popups first
             await handleGotItPopups();
-            
-            // Try to click the "People" button to open participant list (optional)
-            const peopleButton = document.querySelector(
-              'button[aria-label^="People"]'
-            );
-
-            if (peopleButton) {
-              (window as any).logBot('People button found, clicking...');
-              (peopleButton as HTMLElement).click();
-            } else {
-              (window as any).logBot('People button not found - participant list may already be open or interface has changed');
-            }
 
             // Monitor participant list every 5 seconds
+            // Note: Participants are detected via div[data-participant-id] elements already in DOM
             let noParticipantsMs = 0;
             let aloneWithBotMs = 0;
             const everyoneLeftTimeoutMs = (botConfigData as any).automaticLeave && (botConfigData as any).automaticLeave.everyoneLeftTimeout ? (botConfigData as any).automaticLeave.everyoneLeftTimeout : 60000;
