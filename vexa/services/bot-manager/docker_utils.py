@@ -252,7 +252,7 @@ async def start_bot_container(
         "keepAliveIntervalMs": int(os.getenv('KEEP_ALIVE_INTERVAL_MS', '0')) or None,
         "automaticLeave": {
             "waitingRoomTimeout": 60000,
-            "noOneJoinedTimeout": 5000,
+            "noOneJoinedTimeout": 30000,
             "everyoneLeftTimeout": 5000
         },
         "botManagerCallbackUrl": f"http://bot-manager:8080/bots/internal/callback/exited"
