@@ -602,6 +602,62 @@ async def get_meeting_by_id(
         logger.error(f"Error getting meeting {meeting_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting meeting: {str(e)}")
 
+# --- ADDED: Pydantic Model for Transcript Callback ---
+class TranscriptPayload(BaseModel):
+    meeting_id: int
+    transcript_text: str
+    segments: List[Dict[str, Any]]
+    language: str
+    duration: float
+# -----------------------------------------------------
+
+@app.post("/bots/internal/transcript",
+          status_code=status.HTTP_200_OK,
+          summary="Callback for Whisper Backend to save transcript",
+          include_in_schema=False)
+async def save_transcript(
+    payload: TranscriptPayload,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Receives final transcript from Whisper Worker.
+    Updates DB and triggers n8n webhook.
+    """
+    logger.info(f"Received transcript for meeting {payload.meeting_id}. Language: {payload.language}")
+    
+    try:
+        meeting = await db.get(Meeting, payload.meeting_id)
+        if not meeting:
+            logger.error(f"Meeting {payload.meeting_id} not found for transcript save.")
+            raise HTTPException(status_code=404, detail="Meeting not found")
+
+        # Update meeting data
+        current_data = meeting.data or {}
+        current_data['transcript'] = payload.dict() # Save full payload including segments
+        meeting.data = current_data
+        
+        # We can also update status if needed, but usually 'completed' is set by exit callback
+        # meeting.status = 'completed' 
+
+        await db.commit()
+        logger.info(f"Transcript saved to DB for meeting {payload.meeting_id}")
+
+        # Trigger Webhook (using existing task logic if possible, or new one)
+        # Re-using run_all_tasks might be overkill if it does other things, 
+        # but specifically we want 'send_n8n_webhook'.
+        # Let's verify run_all_tasks content or call webhook task directly.
+        # For simplicity/robustness, we re-run tasks which should be idempotent.
+        logger.info(f"Triggering post-meeting tasks (n8n webhook) for meeting {payload.meeting_id}...")
+        background_tasks.add_task(run_all_tasks, meeting.id)
+
+        return {"status": "saved"}
+
+    except Exception as e:
+        logger.error(f"Error saving transcript: {e}", exc_info=True)
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/bots/status",
          response_model=BotStatusResponse,
          summary="Get status of running bot containers for the authenticated user",

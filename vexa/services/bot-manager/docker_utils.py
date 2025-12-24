@@ -277,6 +277,7 @@ async def start_bot_container(
     environment = [
         f"BOT_CONFIG={bot_config_json}",
         f"GLADIA_API_KEY={gladia_api_key_for_bot}", # Use the API key from bot-manager's env
+        f"GLADIA_API_URL={os.getenv('GLADIA_API_URL', 'https://api.gladia.io')}", # Pass configured API URL
         f"LOG_LEVEL={os.getenv('LOG_LEVEL', 'INFO').upper()}",
         f"BOT_LOG_DIR=/app/logs",  # Location inside container for per-call logs
         f"BOT_SCREENSHOTS_DIR=/app/screenshots",  # Location inside container for screenshots

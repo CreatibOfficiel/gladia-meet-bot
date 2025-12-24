@@ -417,6 +417,7 @@ session-data/
 *.aac
 *.ogg
 audio-files/
+whisper-cache/
 
 # Transcription files
 transcriptions/
@@ -527,3 +528,5 @@ swagger/
 # Custom project files
 *.local
 local.* 
+# Persistent Data
+persistent_data/

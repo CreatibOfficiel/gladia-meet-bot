@@ -1,0 +1,7 @@
+flask==3.0.0
+faster-whisper
+gunicorn==21.2.0
+python-multipart
+rq==1.15.1
+redis==5.0.1
+requests==2.31.0

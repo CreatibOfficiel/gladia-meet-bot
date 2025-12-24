@@ -235,6 +235,8 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
   //NOTE: The environment variables passed by docker_utils.py will be available to the Node.js process started by your entrypoint.sh.
   // Read GLADIA_API_KEY from Node.js environment
   const gladiaApiKey = process.env.GLADIA_API_KEY;
+  // Allow configuring Gladia API URL for proxy/dev usage
+  const gladiaApiUrl = process.env.GLADIA_API_URL || "https://api.gladia.io";
 
   if (!gladiaApiKey) {
     // Use the Node-side 'log' utility here
@@ -244,6 +246,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
     return; // Or handle more gracefully
   }
   log(`[Node.js] GLADIA_API_KEY is configured for vexa-bot`);
+  log(`[Node.js] Using Gladia API URL: ${gladiaApiUrl}`);
 
   log("Starting actual recording with direct Gladia API connection");
 
@@ -253,8 +256,9 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
     async (pageArgs: {
       botConfigData: BotConfig;
       gladiaApiKey: string;
+      gladiaApiUrl: string;
     }) => {
-      const { botConfigData, gladiaApiKey } = pageArgs;
+      const { botConfigData, gladiaApiKey, gladiaApiUrl } = pageArgs;
       // Destructure from botConfigData as needed
       const {
         language: initialLanguage,
@@ -436,16 +440,47 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
 
                 // Initialize Gladia session only if we don't have one
                 let sessionData: any;
-                let wsUrl: string;
+                let wsUrl: string = '';
                 
                 if (currentGladiaSessionId) {
                   // Reuse existing session
                   (window as any).logBot(`Reusing existing Gladia session: ${currentGladiaSessionId}`);
-                  wsUrl = `wss://api.gladia.io/v2/live?token=${currentGladiaSessionId}`;
-                  sessionData = { id: currentGladiaSessionId };
-                } else {
+                  // Note: If using proxy, the proxy should handle session state or we re-request.
+                  // For now assuming direct or proxy works same way.
+                  // If using proxy, we might need to be careful about constructing WSS URL manually.
+                  // But standard Gladia flow is: init -> get URL.
+                  // If we are reusing, we might need to know the base WS URL.
+                  // Ideally we shouldn't reuse session ID if we switched backends/proxies, but here we assume consistent environment.
+                  
+                  // Construct WS URL. Proxy usually returns full URL in init.
+                  // If we are manually constructing it here, it might break on proxy if proxy uses different path.
+                  // A safer bet involves re-initializing or storing the original WS URL.
+                  // But let's keep it simple: if we have a session ID, we assume standard Gladia behavior or compatible proxy behavior.
+                  // BUT: The proxy returns `ws://proxy:8084/v2/live?id=...`
+                  // Standard Gladia returns `wss://api.gladia.io/v2/live?token=...`
+                  // So we cannot just assume `wss://api.gladia.io` here.
+                  
+                  // FIX: If we are using a custom URL, we should probably just re-initialize to be safe, 
+                  // or store the full WS URL returned by the previous init.
+                  // For simplicity in this edit, let's just re-initialize if it's a proxy (custom URL), 
+                  // or simple fetch again.
+                  // Or, better, just use the configured API URL to construct the WS URL?
+                  // Providing full compatibility:
+                  if (gladiaApiUrl.includes('gladia.io')) {
+                       wsUrl = `wss://api.gladia.io/v2/live?token=${currentGladiaSessionId}`;
+                  } else {
+                       // Assume the proxy handles ?id= or ?token= parameters similarly or we just re-request new session.
+                       // Re-requesting new session is safer for proxy 
+                       // but let's try to follow the "reuse" logic if possible.
+                       // Actually, let's just create a NEW session on reconnect for safety with proxy.
+                       (window as any).logBot(`[Proxy/Custom] Re-initializing session instead of reusing ID to ensure correct URL.`);
+                       currentGladiaSessionId = null; 
+                       // Fall through to "else" block below
+                  }
+                } 
+                
+                if (!currentGladiaSessionId) {
                   // Create new session
-                  const gladiaApiUrl = "https://api.gladia.io";
                   const initResponse = await fetch(`${gladiaApiUrl}/v2/live`, {
                     method: "POST",
                     headers: {
@@ -533,7 +568,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
 
                   if (socket) {
                     (window as any).logBot(
-                      `✅ WebSocket connected to Gladia. Ready to send audio.`
+                      `✅ WebSocket connected to Gladia (or Proxy). Ready to send audio.`
                     );
                   }
                 };
@@ -629,7 +664,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   }, delay);
                 };
               } catch (e: any) {
-                (window as any).logBot(`Error creating WebSocket: ${e.message}`);
+                (window as any).logBot(`Error creating WebSocket (setupGladiaSession): ${e.message}`);
                 // For initial connection errors, handle with retry logic with limit
                 retryCount++;
                 const maxRetries = 5; // Limit retries to avoid infinite loops
@@ -1534,7 +1569,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
           }
         });
       },
-      { botConfigData: botConfig, gladiaApiKey: gladiaApiKey }
+      { botConfigData: botConfig, gladiaApiKey: gladiaApiKey, gladiaApiUrl: gladiaApiUrl }
     ); // Pass arguments to page.evaluate
 };
 
