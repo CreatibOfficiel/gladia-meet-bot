@@ -1435,7 +1435,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   (window as any).logBot('Google Meet page state changed - ending recording');
                   logLeave('page_state_changed');
                   clearInterval(checkInterval);
-                           if (typeof participantRescanInterval \!== 'undefined') {
+                           if (typeof participantRescanInterval !== 'undefined') {
                                clearInterval(participantRescanInterval);
                            }
                   recorder.disconnect();
@@ -1503,7 +1503,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                            }
                            logLeave('people_list_missing_assume_meeting_ended');
                            clearInterval(checkInterval);
-                           if (typeof participantRescanInterval \!== 'undefined') {
+                           if (typeof participantRescanInterval !== 'undefined') {
                                clearInterval(participantRescanInterval);
                            }
                            recorder.disconnect();
@@ -1536,7 +1536,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                     (window as any).logBot("No participants for configured timeout. Leaving meeting...");
                     logLeave('no_participants_timeout', { duration_ms: noParticipantsMs });
                     clearInterval(checkInterval);
-                           if (typeof participantRescanInterval \!== 'undefined') {
+                           if (typeof participantRescanInterval !== 'undefined') {
                                clearInterval(participantRescanInterval);
                            }
                     recorder.disconnect();
@@ -1551,7 +1551,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                     (window as any).logBot("Alone with bot for configured timeout. Leaving meeting...");
                     logLeave('alone_with_bot_timeout', { duration_ms: aloneWithBotMs });
                     clearInterval(checkInterval);
-                           if (typeof participantRescanInterval \!== 'undefined') {
+                           if (typeof participantRescanInterval !== 'undefined') {
                                clearInterval(participantRescanInterval);
                            }
                     recorder.disconnect();
@@ -1577,7 +1577,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                     threshold_ms: humanInactivityTimeoutMs 
                   });
                   clearInterval(checkInterval);
-                           if (typeof participantRescanInterval \!== 'undefined') {
+                           if (typeof participantRescanInterval !== 'undefined') {
                                clearInterval(participantRescanInterval);
                            }
                   recorder.disconnect();
@@ -1599,7 +1599,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
               (window as any).logBot("Page is unloading. Stopping recorder...");
               logLeave('page_beforeunload');
               clearInterval(checkInterval);
-                           if (typeof participantRescanInterval \!== 'undefined') {
+                           if (typeof participantRescanInterval !== 'undefined') {
                                clearInterval(participantRescanInterval);
                            }
               recorder.disconnect();
@@ -1614,7 +1614,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 );
                 logLeave('document_hidden');
                 clearInterval(checkInterval);
-                           if (typeof participantRescanInterval \!== 'undefined') {
+                           if (typeof participantRescanInterval !== 'undefined') {
                                clearInterval(participantRescanInterval);
                            }
                 recorder.disconnect();
