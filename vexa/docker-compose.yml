@@ -1,4 +1,4 @@
-name: vexa_dev
+name: new_vexa_dev
 services:
   api-gateway:
     build:
@@ -56,7 +56,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - BOT_IMAGE_NAME=${BOT_IMAGE_NAME:-vexa-bot:dev}
       - DEVICE_TYPE=${DEVICE_TYPE:-cpu}
-      - DOCKER_NETWORK=${COMPOSE_PROJECT_NAME:-vexa}_vexa_default
+      - DOCKER_NETWORK=${DOCKER_NETWORK:-new-vexa-default}
       - LOG_LEVEL=DEBUG
       - DB_HOST=postgres
       - DB_PORT=5432
@@ -134,7 +134,9 @@ services:
 
 volumes:
   redis-data:
+    name: new-redis-data
   postgres-data:
+    name: new-postgres-data
 
 networks:
   vexa_default:

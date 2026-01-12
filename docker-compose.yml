@@ -57,9 +57,10 @@ services:
 
   # Nouveaux services dockerisés
   bot-launcher:
+    container_name: new-vexa-bot-bot-launcher
     build: ./services/bot-launcher/
     ports:
-      - "8081:8080"
+      - "9081:8080"
     environment:
       - API_GATEWAY_URL=http://api-gateway:8000
       - API_KEY=${API_KEY}
@@ -74,9 +75,10 @@ services:
       - "traefik.http.services.bot-launcher.loadbalancer.server.port=8080"
 
   log-monitor:
+    container_name: new-vexa-bot-log-monitor
     build: ./services/log-monitor/
     ports:
-      - "8082:8080"
+      - "9082:8080"
     environment:
       - API_KEY=${API_KEY}
     volumes:
@@ -90,9 +92,10 @@ services:
       - "traefik.http.services.log-monitor.loadbalancer.server.port=8080"
 
   transcript-retriever:
+    container_name: new-vexa-bot-transcript-retriever
     build: ./services/transcript-retriever/
     ports:
-      - "8083:8080"
+      - "9083:8080"
     environment:
       - API_GATEWAY_URL=http://api-gateway:8000
       - API_KEY=${API_KEY}
@@ -108,6 +111,7 @@ services:
       - "traefik.http.services.transcript-retriever.loadbalancer.server.port=8080"
 
   whisper-backend:
+    container_name: new-vexa-bot-whisper-backend
     build:
       context: ./services/whisper-backend
       dockerfile: Dockerfile
@@ -127,11 +131,12 @@ services:
       - vexa_default
 
   gladia-proxy:
+    container_name: new-vexa-bot-gladia-proxy
     build:
       context: ./services/gladia-murmure-proxy
       dockerfile: Dockerfile
     ports:
-      - "8084:8084"
+      - "9084:8084"
     environment:
       - PORT=8084
       - WHISPER_API_URL=http://whisper-backend:5000
@@ -144,10 +149,14 @@ services:
 
 volumes:
   redis-data:
+    name: new-redis-data
   postgres-data:
+    name: new-postgres-data
 
 networks:
   vexa_network:
+    name: new-vexa-network
     driver: bridge
   vexa_default:
+    name: new-vexa-default
     driver: bridge

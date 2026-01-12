@@ -334,6 +334,23 @@ async def start_bot_container(
 
         logger.info(f"Successfully started container {container_id} for meeting: {meeting_id}")
         
+        # Connect container to additional network for gladia-proxy access
+        additional_network = "new-vexa-network"
+        if additional_network != DOCKER_NETWORK:
+            try:
+                connect_network_url = f"{socket_url_base}/networks/{additional_network}/connect"
+                network_connect_payload = {
+                    "Container": container_id
+                }
+                logger.info(f"Connecting container {container_id} to network {additional_network}...")
+                network_response = session.post(connect_network_url, json=network_connect_payload)
+                if network_response.status_code == 200:
+                    logger.info(f"Successfully connected container to {additional_network}")
+                else:
+                    logger.warning(f"Failed to connect to {additional_network}. Status: {network_response.status_code}, Response: {network_response.text}")
+            except Exception as e:
+                logger.warning(f"Error connecting to additional network {additional_network}: {e}")
+        
         # *** REMOVED Session Recording Call - To be handled by caller ***
         # try:
         #     asyncio.run(_record_session_start(meeting_id, connection_id))

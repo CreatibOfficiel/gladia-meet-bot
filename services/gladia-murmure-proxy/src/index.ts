@@ -65,6 +65,21 @@ const handleAuthRequest = (req: any, res: any) => {
     }
 }
 
+
+// --- Health Check Endpoint ---
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'gladia-murmure-proxy',
+    version: '1.0.0',
+    config: {
+      port: PORT,
+      whisper_api: WHISPER_API_URL,
+      proxy_host: PROXY_PUBLIC_HOST
+    }
+  });
+});
+
 // --- WebSocket Handling ---
 wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
     const params = new URLSearchParams(req.url?.split('?')[1]);

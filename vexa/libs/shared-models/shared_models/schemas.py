@@ -122,7 +122,7 @@ class UserResponse(UserBase):
     max_concurrent_bots: int = Field(..., description="Maximum number of concurrent bots allowed for the user")
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class TokenBase(BaseModel):
     user_id: int
@@ -136,7 +136,7 @@ class TokenResponse(TokenBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class UserDetailResponse(UserResponse):
     api_tokens: List[TokenResponse] = []
@@ -200,7 +200,7 @@ class MeetingResponse(BaseModel): # Not inheriting from MeetingBase anymore to a
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         use_enum_values = True # Serialize Platform enum to its string value
 
 # --- Meeting Update Schema ---
@@ -229,8 +229,8 @@ class TranscriptionSegment(BaseModel):
     absolute_end_time: Optional[datetime] = Field(None, description="Absolute end timestamp of the segment (UTC)")
 
     class Config:
-        orm_mode = True
-        allow_population_by_field_name = True # Allow using both alias and field name
+        from_attributes = True
+        populate_by_name = True # Allow using both alias and field name
 
 # --- WebSocket Schema (NEW - Represents data from WhisperLive) ---
 
@@ -268,7 +268,7 @@ class TranscriptionResponse(BaseModel): # Doesn't inherit MeetingResponse to avo
     segments: List[TranscriptionSegment] = Field(..., description="List of transcript segments")
 
     class Config:
-        orm_mode = True # Allows creation from ORM models (e.g., joined query result)
+        from_attributes = True # Allows creation from ORM models (e.g., joined query result)
         use_enum_values = True
 
 # --- Utility Schemas --- 
