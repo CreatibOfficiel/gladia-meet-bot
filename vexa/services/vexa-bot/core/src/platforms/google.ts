@@ -999,16 +999,33 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
 
             function scanForAllParticipants() {
                 const participantElements = document.querySelectorAll(participantSelector);
+                let newlyFound = 0;
                 for (let i = 0; i < participantElements.length; i++) {
                     const el = participantElements[i] as HTMLElement;
                     if (!(el as any).dataset.vexaObserverAttached) {
                          observeParticipant(el);
+                         newlyFound++;
                     }
                 }
+                if (newlyFound > 0) {
+                    (window as any).logBot(`[ParticipantScan] Found ${newlyFound} new participant(s) via scan. Total now: ${activeParticipants.size}`);
+                }
+                return participantElements.length;
             }
 
             // Initialize speaker detection
             scanForAllParticipants();
+            
+            // Periodic re-scan to catch participants that might have been missed
+            // This is important because Google Meet's DOM can change dynamically
+            const participantRescanInterval = setInterval(() => {
+                try {
+                    const foundCount = scanForAllParticipants();
+                    (window as any).logBot(`[ParticipantRescan] Periodic scan found ${foundCount} participant elements, ${activeParticipants.size} in active map`);
+                } catch (error: any) {
+                    (window as any).logBot(`[ParticipantRescan] Error during periodic scan: ${error.message}`);
+                }
+            }, 10000); // Re-scan every 10 seconds
 
             // Monitor for new participants
             const bodyObserver = new MutationObserver((mutationsList) => {
@@ -1418,6 +1435,9 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   (window as any).logBot('Google Meet page state changed - ending recording');
                   logLeave('page_state_changed');
                   clearInterval(checkInterval);
+                           if (typeof participantRescanInterval \!== 'undefined') {
+                               clearInterval(participantRescanInterval);
+                           }
                   recorder.disconnect();
                   if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
                   (window as any).triggerNodeGracefulLeave();
@@ -1426,11 +1446,25 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 }
 
                 // Use the size of our central map as the source of truth
+                // But also do a direct DOM scan as a fallback to catch any missed participants
                 let count = 0; // Declare count outside try-catch
                 try {
+                  // First, do a quick re-scan to ensure we haven't missed any participants
+                  const domParticipantCount = scanForAllParticipants();
+                  
+                  // Use the map size as primary source, but log DOM count for debugging
                   count = activeParticipants.size;
                   const participantIds = Array.from(activeParticipants.keys());
-                  (window as any).logBot(`Participant check: Found ${count} unique participants from central list. IDs: ${JSON.stringify(participantIds)}`);
+                  (window as any).logBot(`Participant check: Found ${count} unique participants from central list (DOM elements: ${domParticipantCount}). IDs: ${JSON.stringify(participantIds)}`);
+                  
+                  // If DOM has participants but our map is empty, there's a detection issue
+                  if (domParticipantCount > 0 && count === 0) {
+                      (window as any).logBot(`⚠️ WARNING: DOM shows ${domParticipantCount} participant elements but map is empty. Detection may have failed. Not counting as "no participants".`);
+                      // Don't accumulate timeout if detection is clearly failing
+                      noParticipantsMs = 0;
+                      aloneWithBotMs = 0;
+                      return; // Skip timeout logic this cycle
+                  }
 
                   // Check if this is the first time we detect participants (real admission confirmation)
                   if (!(window as any).realAdmissionConfirmed && count > 0) {
@@ -1461,8 +1495,17 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                            (window as any).logBot(
                               "Participant list container not found (and participant count is 0); assuming meeting ended."
                            );
+                           // Final check: do a fresh scan before assuming meeting ended
+                           const finalScan = scanForAllParticipants();
+                           if (finalScan > 0 || activeParticipants.size > 0) {
+                               (window as any).logBot(`⚠️ Final scan found ${activeParticipants.size} participants despite missing container. Not leaving.`);
+                               return; // Don't leave if participants are found
+                           }
                            logLeave('people_list_missing_assume_meeting_ended');
                            clearInterval(checkInterval);
+                           if (typeof participantRescanInterval \!== 'undefined') {
+                               clearInterval(participantRescanInterval);
+                           }
                            recorder.disconnect();
                            if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
                            (window as any).triggerNodeGracefulLeave();
@@ -1478,6 +1521,10 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                     (window as any).logBot('Participant detection consistently failing - this may indicate a Google Meet UI change. Meeting will continue until other timeout conditions.');
                     // Don't clear interval, just stop failing - let other conditions handle the exit
                   }
+                  // Reset timeout counters on detection failure to prevent false disconnections
+                  // Only accumulate timeout if detection is successful but count is actually 0
+                  noParticipantsMs = 0;
+                  aloneWithBotMs = 0;
                   return; // Skip participant count logic on detection failure
                 }
 
@@ -1489,6 +1536,9 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                     (window as any).logBot("No participants for configured timeout. Leaving meeting...");
                     logLeave('no_participants_timeout', { duration_ms: noParticipantsMs });
                     clearInterval(checkInterval);
+                           if (typeof participantRescanInterval \!== 'undefined') {
+                               clearInterval(participantRescanInterval);
+                           }
                     recorder.disconnect();
                     if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
                     (window as any).triggerNodeGracefulLeave();
@@ -1501,6 +1551,9 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                     (window as any).logBot("Alone with bot for configured timeout. Leaving meeting...");
                     logLeave('alone_with_bot_timeout', { duration_ms: aloneWithBotMs });
                     clearInterval(checkInterval);
+                           if (typeof participantRescanInterval \!== 'undefined') {
+                               clearInterval(participantRescanInterval);
+                           }
                     recorder.disconnect();
                     if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
                     (window as any).triggerNodeGracefulLeave();
@@ -1524,6 +1577,9 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                     threshold_ms: humanInactivityTimeoutMs 
                   });
                   clearInterval(checkInterval);
+                           if (typeof participantRescanInterval \!== 'undefined') {
+                               clearInterval(participantRescanInterval);
+                           }
                   recorder.disconnect();
                   if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
                   (window as any).triggerNodeGracefulLeave();
@@ -1543,6 +1599,9 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
               (window as any).logBot("Page is unloading. Stopping recorder...");
               logLeave('page_beforeunload');
               clearInterval(checkInterval);
+                           if (typeof participantRescanInterval \!== 'undefined') {
+                               clearInterval(participantRescanInterval);
+                           }
               recorder.disconnect();
               if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
               (window as any).triggerNodeGracefulLeave();
@@ -1555,6 +1614,9 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 );
                 logLeave('document_hidden');
                 clearInterval(checkInterval);
+                           if (typeof participantRescanInterval \!== 'undefined') {
+                               clearInterval(participantRescanInterval);
+                           }
                 recorder.disconnect();
                 if (keepAliveTimer !== null) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
                 (window as any).triggerNodeGracefulLeave();
