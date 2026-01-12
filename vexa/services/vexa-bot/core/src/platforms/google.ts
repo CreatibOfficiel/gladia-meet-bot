@@ -1000,13 +1000,37 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
             function scanForAllParticipants() {
                 const participantElements = document.querySelectorAll(participantSelector);
                 let newlyFound = 0;
+                
+                // Build set of current DOM participant IDs
+                const currentDomIds = new Set<string>();
+                
                 for (let i = 0; i < participantElements.length; i++) {
                     const el = participantElements[i] as HTMLElement;
+                    const participantId = getParticipantId(el);
+                    currentDomIds.add(participantId);
+                    
                     if (!(el as any).dataset.vexaObserverAttached) {
                          observeParticipant(el);
                          newlyFound++;
                     }
                 }
+                
+                // Clean up activeParticipants: remove participants no longer in DOM
+                const participantsToRemove: string[] = [];
+                activeParticipants.forEach((_, participantId) => {
+                    if (!currentDomIds.has(participantId)) {
+                        participantsToRemove.push(participantId);
+                    }
+                });
+                
+                if (participantsToRemove.length > 0) {
+                    participantsToRemove.forEach(participantId => {
+                        activeParticipants.delete(participantId);
+                        speakingStates.delete(participantId);
+                    });
+                    (window as any).logBot(`[ParticipantCleanup] Removed ${participantsToRemove.length} participant(s) no longer in DOM. IDs: ${JSON.stringify(participantsToRemove)}`);
+                }
+                
                 if (newlyFound > 0) {
                     (window as any).logBot(`[ParticipantScan] Found ${newlyFound} new participant(s) via scan. Total now: ${activeParticipants.size}`);
                 }
