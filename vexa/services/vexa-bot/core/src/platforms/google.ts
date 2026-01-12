@@ -1007,11 +1007,13 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 for (let i = 0; i < participantElements.length; i++) {
                     const el = participantElements[i] as HTMLElement;
                     const participantId = getParticipantId(el);
-                    currentDomIds.add(participantId);
-                    
-                    if (!(el as any).dataset.vexaObserverAttached) {
-                         observeParticipant(el);
-                         newlyFound++;
+                    if (participantId) {
+                        currentDomIds.add(participantId);
+                        
+                        if (!(el as any).dataset.vexaObserverAttached) {
+                             observeParticipant(el);
+                             newlyFound++;
+                        }
                     }
                 }
                 
