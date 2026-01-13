@@ -54,7 +54,8 @@ def transcribe():
     audio_file.save(temp_path)
 
     # Enqueue job
-    job = q.enqueue(process_audio, temp_path, meeting_id, callback_url)
+    # Increase job timeout to 30 minutes for long audio transcription
+    job = q.enqueue(process_audio, temp_path, meeting_id, callback_url, job_timeout=1800)
     
     logger.info(f"Job enqueued: {job.id}")
 
