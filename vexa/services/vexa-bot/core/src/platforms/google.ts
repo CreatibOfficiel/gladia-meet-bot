@@ -554,7 +554,13 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                   }
                 }
 
-                socket = new WebSocket(wsUrl);
+                // Add meeting_id to WebSocket URL for proxy to track which meeting this audio belongs to
+                const meetingId = (botConfigData as any).meeting_id || 'unknown';
+                const urlSeparator = wsUrl.includes('?') ? '&' : '?';
+                const wsUrlWithMeetingId = `${wsUrl}${urlSeparator}meeting_id=${meetingId}`;
+                (window as any).logBot(`Connecting WebSocket with meeting_id=${meetingId}: ${wsUrlWithMeetingId}`);
+
+                socket = new WebSocket(wsUrlWithMeetingId);
 
                 socket.onopen = function () {
                   // Log current config being used
