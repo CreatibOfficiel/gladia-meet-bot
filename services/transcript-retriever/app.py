@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """
-Service Transcript Retriever - Récupération des transcriptions finales
-Version dockerisée de save_transcript.py
+Service Transcript Retriever - Récupération des transcriptions (Nouvelle version Whisper)
 """
 import os
 import requests
 import json
-import time
 from flask import Flask, request, jsonify, render_template_string
 from datetime import datetime
 
@@ -17,7 +15,6 @@ API_BASE_URL = os.getenv("API_GATEWAY_URL", "http://api-gateway:8000")
 API_KEY = os.getenv("API_KEY")
 if not API_KEY:
     raise ValueError("API_KEY environment variable is required")
-GLADIA_API_KEY = os.getenv("GLADIA_API_KEY", "7a36b5ee-8402-4c4b-b1a4-3f9146748fb4")
 
 # Headers pour les requêtes API
 headers = {
@@ -25,48 +22,50 @@ headers = {
     "Content-Type": "application/json"
 }
 
-# Template HTML pour l'interface de récupération
+# Template HTML
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Vexa Transcript Retriever</title>
+    <title>Vexa Transcript Retriever (Whisper)</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; }
-        .container { max-width: 1000px; margin: 0 auto; }
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #333; margin-bottom: 10px; }
+        .subtitle { color: #666; margin-bottom: 30px; }
         .form-group { margin-bottom: 20px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; }
-        input, textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
-        textarea { height: 200px; font-family: monospace; }
-        button { background: #007bff; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #333; }
+        input { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 4px; font-size: 14px; }
+        input:focus { outline: none; border-color: #007bff; }
+        small { color: #666; font-size: 12px; }
+        button { background: #007bff; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; font-size: 14px; font-weight: 500; }
         button:hover { background: #0056b3; }
         button.secondary { background: #6c757d; }
         button.secondary:hover { background: #545b62; }
-        .status { margin-top: 20px; padding: 15px; border-radius: 4px; }
+        .status { margin-top: 20px; padding: 15px; border-radius: 4px; font-size: 14px; }
         .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
-        .transcript { background: #f8f9fa; padding: 15px; border-radius: 4px; margin-top: 20px; }
-        .transcript h3 { margin-top: 0; }
-        .download-links { margin-top: 15px; }
-        .download-links a { display: inline-block; margin-right: 15px; color: #007bff; text-decoration: none; }
-        .download-links a:hover { text-decoration: underline; }
+        .transcript { background: #f8f9fa; padding: 20px; border-radius: 4px; margin-top: 20px; border: 1px solid #dee2e6; }
+        .transcript h3 { margin-top: 0; color: #333; }
+        .transcript h4 { color: #555; margin-top: 15px; }
+        .transcript-text { background: white; padding: 15px; border: 1px solid #ddd; border-radius: 4px; white-space: pre-wrap; font-family: 'Courier New', monospace; line-height: 1.6; }
+        .segment { padding: 10px; margin: 5px 0; background: white; border-left: 3px solid #007bff; border-radius: 3px; }
+        .timestamp { color: #007bff; font-weight: bold; margin-right: 10px; }
+        .meta-info { background: #e9ecef; padding: 10px; border-radius: 4px; margin: 10px 0; }
+        .meta-info strong { color: #333; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>📝 Vexa Transcript Retriever</h1>
+        <p class="subtitle">Nouvelle version avec Whisper (self-hosted)</p>
         
         <form id="transcriptForm">
             <div class="form-group">
-                <label for="meeting_id">Meeting ID:</label>
-                <input type="text" id="meeting_id" name="meeting_id" placeholder="ex: cia-spqx-acb" required>
-            </div>
-            
-            <div class="form-group">
-                <label for="session_id">Session ID:</label>
-                <input type="text" id="session_id" name="session_id" placeholder="ex: 9" required>
-                <small>Session ID obtenu lors du lancement du bot (ex: 9, 10, etc.)</small>
+                <label for="meeting_id">Meeting ID (numérique):</label>
+                <input type="number" id="meeting_id" name="meeting_id" placeholder="ex: 14" required>
+                <small>ID numérique du meeting obtenu lors du lancement du bot</small>
             </div>
             
             <button type="submit">🔍 Retrieve Transcript</button>
@@ -78,12 +77,11 @@ HTML_TEMPLATE = """
     </div>
 
     <script>
-        // Auto-fill session_id from URL parameter if present
         document.addEventListener('DOMContentLoaded', function() {
             const urlParams = new URLSearchParams(window.location.search);
-            const sessionId = urlParams.get('session_id');
-            if (sessionId) {
-                document.getElementById('session_id').value = sessionId;
+            const meetingId = urlParams.get('meeting_id');
+            if (meetingId) {
+                document.getElementById('meeting_id').value = meetingId;
             }
         });
         
@@ -91,22 +89,17 @@ HTML_TEMPLATE = """
             e.preventDefault();
             
             const formData = new FormData(e.target);
-            const data = {
-                meeting_id: formData.get('meeting_id'),
-                session_id: formData.get('session_id') || null
-            };
+            const meetingId = formData.get('meeting_id');
             
             const statusDiv = document.getElementById('status');
             const transcriptDiv = document.getElementById('transcript');
             
-            statusDiv.innerHTML = '<div class="info">🔄 Retrieving transcript...</div>';
+            statusDiv.innerHTML = '<div class="info">🔄 Retrieving transcript from database...</div>';
             transcriptDiv.innerHTML = '';
             
             try {
-                const response = await fetch('/retrieve', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
+                const response = await fetch('/retrieve/' + meetingId, {
+                    method: 'GET'
                 });
                 
                 const result = await response.json();
@@ -114,36 +107,44 @@ HTML_TEMPLATE = """
                 if (response.ok) {
                     statusDiv.innerHTML = '<div class="success">✅ Transcript retrieved successfully!</div>';
                     
-                    // Display transcript
                     let transcriptHtml = '<div class="transcript">';
-                    transcriptHtml += '<h3>📄 Transcript Results</h3>';
+                    transcriptHtml += '<h3>📄 Transcription Results</h3>';
                     
-                    if (result.session_info) {
-                        transcriptHtml += '<p><strong>Session ID:</strong> ' + result.session_info.session_id + '</p>';
-                        transcriptHtml += '<p><strong>Status:</strong> ' + result.session_info.status + '</p>';
-                        transcriptHtml += '<p><strong>Audio Duration:</strong> ' + result.session_info.audio_duration + ' seconds</p>';
+                    if (result.meta) {
+                        transcriptHtml += '<div class="meta-info">';
+                        transcriptHtml += '<strong>Meeting ID:</strong> ' + result.meta.meeting_id + '<br>';
+                        transcriptHtml += '<strong>Platform:</strong> ' + result.meta.platform + '<br>';
+                        transcriptHtml += '<strong>Platform Meeting ID:</strong> ' + result.meta.platform_specific_id + '<br>';
+                        transcriptHtml += '<strong>Status:</strong> ' + result.meta.status + '<br>';
+                        if (result.transcript && result.transcript.duration) {
+                            transcriptHtml += '<strong>Duration:</strong> ' + result.transcript.duration.toFixed(2) + ' seconds<br>';
+                        }
+                        if (result.transcript && result.transcript.language) {
+                            transcriptHtml += '<strong>Language:</strong> ' + result.transcript.language + '<br>';
+                        }
+                        transcriptHtml += '</div>';
                     }
                     
-                    if (result.transcript_text) {
-                        transcriptHtml += '<h4>Full Transcript:</h4>';
-                        transcriptHtml += '<textarea readonly>' + result.transcript_text + '</textarea>';
+                    if (result.transcript && result.transcript.transcript_text) {
+                        transcriptHtml += '<h4>📝 Full Transcript:</h4>';
+                        transcriptHtml += '<div class="transcript-text">' + result.transcript.transcript_text + '</div>';
                     }
                     
-                    if (result.utterances && result.utterances.length > 0) {
-                        transcriptHtml += '<h4>Utterances:</h4>';
-                        transcriptHtml += '<ul>';
-                        result.utterances.forEach(utterance => {
-                            transcriptHtml += '<li><strong>' + utterance.start + 's-' + utterance.end + 's:</strong> ' + utterance.text + '</li>';
+                    if (result.transcript && result.transcript.segments && result.transcript.segments.length > 0) {
+                        transcriptHtml += '<h4>🎙️ Segments with Timestamps:</h4>';
+                        result.transcript.segments.forEach(segment => {
+                            transcriptHtml += '<div class="segment">';
+                            transcriptHtml += '<span class="timestamp">[' + segment.start.toFixed(1) + 's - ' + segment.end.toFixed(1) + 's]</span>';
+                            transcriptHtml += segment.text;
+                            transcriptHtml += '</div>';
                         });
-                        transcriptHtml += '</ul>';
                     }
                     
-                    transcriptHtml += '<div class="download-links">';
-                    transcriptHtml += '<a href="/download/json/' + data.meeting_id + '" target="_blank">📥 Download JSON</a>';
-                    transcriptHtml += '<a href="/download/txt/' + data.meeting_id + '" target="_blank">📥 Download TXT</a>';
-                    transcriptHtml += '</div>';
-                    transcriptHtml += '</div>';
+                    if (!result.transcript || !result.transcript.transcript_text) {
+                        transcriptHtml += '<p style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px;">⚠️ No transcript data found for this meeting. The audio may not have been processed yet or the transcription failed.</p>';
+                    }
                     
+                    transcriptHtml += '</div>';
                     transcriptDiv.innerHTML = transcriptHtml;
                 } else {
                     statusDiv.innerHTML = '<div class="error">❌ Error: ' + result.error + '</div>';
@@ -165,127 +166,56 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def index():
-    """Page d'accueil avec interface de récupération"""
+    """Page d'accueil"""
     return render_template_string(HTML_TEMPLATE)
 
-@app.route('/retrieve', methods=['POST'])
-def retrieve_transcript():
-    """Récupérer une transcription"""
+@app.route('/retrieve/<int:meeting_id>', methods=['GET'])
+def retrieve_transcript(meeting_id):
+    """Récupérer une transcription depuis la base de données"""
     try:
-        data = request.json
-        session_id = data.get('session_id')  # Notre ID interne (1, 2, 3, etc.) ou UUID Gladia
+        print(f"🔍 Retrieving transcript for meeting ID: {meeting_id}")
         
-        if not session_id:
-            return jsonify({'error': 'Session ID is required'}), 400
+        # Récupérer le meeting depuis l'API
+        url = f"{API_BASE_URL}/meetings/{meeting_id}"
+        print(f"📡 Calling API: {url}")
         
-        print(f"🔍 Retrieving transcript for session: {session_id}")
+        response = requests.get(url, headers=headers, timeout=10)
         
-        # Si le session_id ressemble à un UUID Gladia, l'utiliser directement
-        if len(session_id) == 36 and '-' in session_id:
-            print(f"📡 Using Gladia session ID directly: {session_id}")
-            gladia_result = get_gladia_final_results(session_id)
-            if gladia_result:
-                return jsonify(gladia_result), 200
-            else:
-                return jsonify({'error': 'No transcript found for this session'}), 404
-        else:
-            # Récupérer le gladia_session_id depuis la base de données
-            try:
-                response = requests.get(f"{API_BASE_URL}/meetings/{session_id}", headers=headers)
-                if response.status_code == 200:
-                    meeting_data = response.json()
-                    gladia_session_id = meeting_data.get('gladia_session_id')
-                    
-                    if not gladia_session_id:
-                        return jsonify({'error': 'No Gladia session ID found for this meeting'}), 404
-                    
-                    print(f"📡 Found Gladia session ID: {gladia_session_id}")
-                    
-                    # Récupérer les résultats finaux depuis Gladia
-                    gladia_result = get_gladia_final_results(gladia_session_id)
-                    if gladia_result:
-                        return jsonify(gladia_result), 200
-                    else:
-                        return jsonify({'error': 'No transcript found for this session'}), 404
-                else:
-                    return jsonify({'error': f'Failed to get meeting data: {response.status_code}'}), response.status_code
-                    
-            except Exception as e:
-                return jsonify({'error': f'Error retrieving meeting data: {str(e)}'}), 500
-            
-    except Exception as e:
-        error_msg = f"Error retrieving transcript: {str(e)}"
-        print(f"❌ {error_msg}")
-        return jsonify({'error': error_msg}), 500
-
-def get_gladia_final_results(session_id):
-    """Récupérer les résultats finaux depuis l'API Gladia"""
-    try:
-        # Appel à l'API Gladia pour récupérer les résultats finaux
-        gladia_url = f"https://api.gladia.io/v2/live/{session_id}"
-        headers_gladia = {
-            "X-GLADIA-KEY": GLADIA_API_KEY,
-            "Content-Type": "application/json"
+        if response.status_code == 404:
+            return jsonify({'error': 'Meeting not found'}), 404
+        
+        if response.status_code != 200:
+            print(f"❌ API returned status {response.status_code}: {response.text}")
+            return jsonify({'error': f'Failed to get meeting data: {response.status_code}'}), response.status_code
+        
+        meeting_data = response.json()
+        print(f"✅ Meeting data retrieved: {json.dumps(meeting_data, indent=2)}")
+        
+        # Extraire les données de transcription du champ 'data'
+        transcript_data = meeting_data.get('data', {}).get('transcript', {})
+        
+        result = {
+            'meta': {
+                'meeting_id': meeting_data.get('id'),
+                'platform': meeting_data.get('platform'),
+                'platform_specific_id': meeting_data.get('platform_specific_id'),
+                'status': meeting_data.get('status'),
+                'start_time': meeting_data.get('start_time'),
+                'end_time': meeting_data.get('end_time')
+            },
+            'transcript': transcript_data
         }
         
-        response = requests.get(gladia_url, headers=headers_gladia, timeout=30)
+        return jsonify(result), 200
         
-        if response.status_code == 200:
-            result = response.json()
-            
-            # Extraire les informations importantes
-            session_info = {
-                'session_id': session_id,
-                'status': result.get('status', 'unknown'),
-                'audio_duration': result.get('audio_duration', 0)
-            }
-            
-            transcript_text = ""
-            utterances = []
-            
-            if result.get('result') and result['result'].get('transcription'):
-                transcription = result['result']['transcription']
-                transcript_text = transcription.get('full_transcript', "")
-                
-                # Extraire les utterances
-                for utterance in transcription.get('utterances', []):
-                    utterances.append({
-                        'text': utterance.get('text', ''),
-                        'start': utterance.get('start', 0),
-                        'end': utterance.get('end', 0),
-                        'language': utterance.get('language', 'unknown')
-                    })
-            
-            return {
-                'session_info': session_info,
-                'transcript_text': transcript_text,
-                'utterances': utterances,
-                'raw_result': result
-            }
-        else:
-            print(f"Gladia API error: {response.status_code} - {response.text}")
-            return None
-            
+    except requests.RequestException as e:
+        print(f"❌ Request error: {e}")
+        return jsonify({'error': f'Failed to connect to API: {str(e)}'}), 500
     except Exception as e:
-        print(f"Error calling Gladia API: {e}")
-        return None
-
-@app.route('/download/json/<meeting_id>')
-def download_json(meeting_id):
-    """Télécharger la transcription en JSON"""
-    # Cette fonction simulerait le téléchargement d'un fichier JSON
-    # Pour l'instant, retourne un message
-    return jsonify({'message': f'JSON download for meeting {meeting_id} would be implemented here'})
-
-@app.route('/download/txt/<meeting_id>')
-def download_txt(meeting_id):
-    """Télécharger la transcription en TXT"""
-    # Cette fonction simulerait le téléchargement d'un fichier TXT
-    # Pour l'instant, retourne un message
-    return jsonify({'message': f'TXT download for meeting {meeting_id} would be implemented here'})
+        print(f"❌ Error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    print("📝 Transcript Retriever Service starting...")
-    print(f"📡 API Gateway URL: {API_BASE_URL}")
-    print(f"🔑 Gladia API Key: {GLADIA_API_KEY[:8]}...")
-    app.run(host='0.0.0.0', port=8080, debug=False) 
+    print("🚀 Starting Transcript Retriever (Whisper version)...")
+    print(f"📡 API Base URL: {API_BASE_URL}")
+    app.run(host='0.0.0.0', port=8080, debug=True)
