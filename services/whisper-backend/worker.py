@@ -41,7 +41,17 @@ def process_audio(file_path: str, meeting_id: str, callback_url: str):
     logger.info(f"Starting transcription for Meeting {meeting_id}. File: {file_path}")
     
     try:
-        segments, info = model.transcribe(file_path, beam_size=5)
+        # VAD filter to avoid hallucinations on silence/low audio
+        segments, info = model.transcribe(
+            file_path,
+            beam_size=5,
+            vad_filter=True,
+            vad_parameters=dict(
+                min_silence_duration_ms=1000,  # Ignore silences > 1s
+                speech_pad_ms=400,             # Padding around speech
+                threshold=0.5                  # VAD sensitivity
+            )
+        )
         
         full_text = ""
         transcript_result = []
