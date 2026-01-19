@@ -1,5 +1,5 @@
 import sqlalchemy
-from sqlalchemy import (Column, String, Text, Integer, DateTime, Float, ForeignKey, Index, UniqueConstraint)
+from sqlalchemy import (Column, String, Text, Integer, DateTime, Float, ForeignKey, Index, UniqueConstraint, Boolean)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func, text
 from sqlalchemy.orm import declarative_base, relationship
@@ -113,3 +113,15 @@ class MeetingSession(Base):
     meeting = relationship("Meeting", back_populates="sessions") # Define relationship
 
     __table_args__ = (UniqueConstraint('meeting_id', 'session_uid', name='_meeting_session_uc'),) # Ensure unique session per meeting
+
+
+class Config(Base):
+    """Configuration key-value store for admin settings"""
+    __tablename__ = "configs"
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String(100), unique=True, nullable=False, index=True)
+    value = Column(Text, nullable=False)
+    description = Column(String(255), nullable=True)
+    is_secret = Column(Boolean, default=False)  # Mask in UI for sensitive values
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

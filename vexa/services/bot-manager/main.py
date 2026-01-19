@@ -25,7 +25,7 @@ from auth import get_user_and_token # Import the new dependency
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import and_, desc
-from datetime import datetime # For start_time
+from datetime import datetime, timedelta # For start_time and rejoin logic
 
 from app.tasks.bot_exit_tasks import run_all_tasks
 
@@ -212,20 +212,51 @@ async def request_bot(
             existing_meeting = None
     
     if existing_meeting is None:
-        logger.info(f"No active/valid existing meeting found for user {current_user.id}, platform '{req.platform.value}', native ID '{native_meeting_id}'. Proceeding to create a new meeting record.")
-        # Create Meeting record in DB
-        new_meeting = Meeting(
-            user_id=current_user.id,
-            platform=req.platform.value,
-            platform_specific_id=native_meeting_id,
-            status='requested',
-            # Ensure other necessary fields like created_at are handled by the model or explicitly set
-        )
-        db.add(new_meeting)
-        await db.commit()
-        await db.refresh(new_meeting)
-        meeting_id_for_bot = new_meeting.id # Use this for the bot
-        logger.info(f"Created new meeting record with ID: {meeting_id_for_bot}")
+        logger.info(f"No active/valid existing meeting found for user {current_user.id}, platform '{req.platform.value}', native ID '{native_meeting_id}'.")
+
+        # --- REJOIN LOGIC: Check for completed/failed meeting from the same day ---
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+
+        same_day_meeting_stmt = select(Meeting).where(
+            Meeting.user_id == current_user.id,
+            Meeting.platform == req.platform.value,
+            Meeting.platform_specific_id == native_meeting_id,
+            Meeting.status.in_(['completed', 'failed', 'error']),  # Reusable statuses
+            Meeting.created_at >= today_start,
+            Meeting.created_at < today_end
+        ).order_by(desc(Meeting.created_at)).limit(1)
+
+        same_day_result = await db.execute(same_day_meeting_stmt)
+        same_day_meeting = same_day_result.scalars().first()
+
+        if same_day_meeting:
+            # REJOIN: Reuse the existing meeting record
+            logger.info(f"REJOIN: Found same-day meeting {same_day_meeting.id} (status: {same_day_meeting.status}) for user {current_user.id}, platform '{req.platform.value}', native ID '{native_meeting_id}'. Reusing for merge.")
+            same_day_meeting.status = 'requested'
+            same_day_meeting.bot_container_id = None  # Will be set after container start
+            same_day_meeting.end_time = None  # Reset end time
+            # Don't reset start_time or created_at to preserve original timeline
+            await db.commit()
+            await db.refresh(same_day_meeting)
+            new_meeting = same_day_meeting
+            meeting_id_for_bot = new_meeting.id
+            logger.info(f"REJOIN: Reusing meeting {meeting_id_for_bot} for rejoin. Transcriptions will be merged.")
+        else:
+            # Create new Meeting record in DB
+            logger.info(f"Proceeding to create a new meeting record.")
+            new_meeting = Meeting(
+                user_id=current_user.id,
+                platform=req.platform.value,
+                platform_specific_id=native_meeting_id,
+                status='requested',
+                # Ensure other necessary fields like created_at are handled by the model or explicitly set
+            )
+            db.add(new_meeting)
+            await db.commit()
+            await db.refresh(new_meeting)
+            meeting_id_for_bot = new_meeting.id
+            logger.info(f"Created new meeting record with ID: {meeting_id_for_bot}")
     else: # This case should ideally not be reached if the 409 was raised correctly above.
           # This implies existing_meeting was found and its container was running.
         logger.error(f"Logic error: Should have raised 409 for existing meeting {existing_meeting.id}, but proceeding.")

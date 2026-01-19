@@ -58,14 +58,25 @@ services:
   # Nouveaux services dockerisés
   bot-launcher:
     container_name: new-vexa-bot-bot-launcher
-    build: ./services/bot-launcher/
+    build:
+      context: ./services
+      dockerfile: bot-launcher/Dockerfile
     ports:
       - "9081:8080"
     environment:
       - API_GATEWAY_URL=http://api-gateway:8000
       - API_KEY=${API_KEY}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-dev-secret-key-change-in-production}
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${POSTGRES_USER:-vexa}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-vexapassword}
+      - DATABASE_NAME=${POSTGRES_DB:-vexa}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
     depends_on:
       - api-gateway
+      - postgres
     networks:
       - vexa_network
       - vexa_default
@@ -76,13 +87,25 @@ services:
 
   log-monitor:
     container_name: new-vexa-bot-log-monitor
-    build: ./services/log-monitor/
+    build:
+      context: ./services
+      dockerfile: log-monitor/Dockerfile
     ports:
       - "9082:8080"
     environment:
       - API_KEY=${API_KEY}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-dev-secret-key-change-in-production}
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${POSTGRES_USER:-vexa}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-vexapassword}
+      - DATABASE_NAME=${POSTGRES_DB:-vexa}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - postgres
     networks:
       - vexa_network
       - vexa_default
@@ -93,15 +116,26 @@ services:
 
   transcript-retriever:
     container_name: new-vexa-bot-transcript-retriever
-    build: ./services/transcript-retriever/
+    build:
+      context: ./services
+      dockerfile: transcript-retriever/Dockerfile
     ports:
       - "9083:8080"
     environment:
       - API_GATEWAY_URL=http://api-gateway:8000
       - API_KEY=${API_KEY}
       - GLADIA_API_KEY=${GLADIA_API_KEY}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-dev-secret-key-change-in-production}
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${POSTGRES_USER:-vexa}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-vexapassword}
+      - DATABASE_NAME=${POSTGRES_DB:-vexa}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
     depends_on:
       - api-gateway
+      - postgres
     networks:
       - vexa_network
       - vexa_default
@@ -109,6 +143,32 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.transcript-retriever.rule=Host(`transcript-retriever.localhost`)"
       - "traefik.http.services.transcript-retriever.loadbalancer.server.port=8080"
+
+  admin-config:
+    container_name: new-vexa-bot-admin-config
+    build:
+      context: ./services
+      dockerfile: admin-config/Dockerfile
+    ports:
+      - "9085:8080"
+    environment:
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-dev-secret-key-change-in-production}
+      - DATABASE_HOST=postgres
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${POSTGRES_USER:-vexa}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-vexapassword}
+      - DATABASE_NAME=${POSTGRES_DB:-vexa}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+    depends_on:
+      - postgres
+    networks:
+      - vexa_network
+      - vexa_default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.admin-config.rule=Host(`admin-config.localhost`)"
+      - "traefik.http.services.admin-config.loadbalancer.server.port=8080"
 
   whisper-backend:
     container_name: new-vexa-bot-whisper-backend

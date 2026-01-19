@@ -5,10 +5,11 @@ WORKDIR /app
 # Install Docker CLI
 RUN apt-get update && apt-get install -y docker.io curl && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY log-monitor/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
+COPY shared/ /app/shared/
+COPY log-monitor/app.py .
 
 EXPOSE 8080
 

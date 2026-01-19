@@ -2,11 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY bot-launcher/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
-COPY templates/ templates/
+COPY shared/ /app/shared/
+COPY bot-launcher/app.py .
+COPY bot-launcher/templates/ templates/
 
 EXPOSE 8080
 

@@ -7,10 +7,16 @@ import os
 import requests
 import json
 import time
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session
 from datetime import datetime
 
+# Import shared auth module
+import sys
+sys.path.insert(0, '/app')
+from shared.auth import require_auth, logout, ensure_configs_table, init_default_admin
+
 app = Flask(__name__)
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Configuration
 API_BASE_URL = os.getenv("API_GATEWAY_URL", "http://api-gateway:8000")
@@ -26,10 +32,18 @@ headers = {
 
 # Template HTML simple pour l'interface
 
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
+@require_auth
 def index():
-    """Page d'accueil avec interface utilisateur"""
+    """Page d'accueil avec interface utilisateur (protégée par authentification)"""
     return render_template('template.html')
+
+
+@app.route('/logout')
+def logout_route():
+    """Déconnexion de l'utilisateur"""
+    logout()
+    return redirect(url_for('index'))
 
 @app.route('/launch', methods=['POST'])
 def launch_bot():
@@ -91,4 +105,13 @@ def stop_bot(meeting_id):
 if __name__ == '__main__':
     print("🤖 Bot Launcher Service starting...")
     print(f"📡 API Gateway URL: {API_BASE_URL}")
+
+    # Initialize auth system
+    try:
+        ensure_configs_table()
+        init_default_admin()
+        print("🔐 Authentication system initialized")
+    except Exception as e:
+        print(f"⚠️ Auth initialization warning: {e}")
+
     app.run(host='0.0.0.0', port=8080, debug=False) 

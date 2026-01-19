@@ -7,10 +7,16 @@ import os
 import json
 import subprocess
 import time
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template_string, redirect, url_for, session
 from datetime import datetime
 
+# Import shared auth module
+import sys
+sys.path.insert(0, '/app')
+from shared.auth import require_auth, logout, ensure_configs_table, init_default_admin
+
 app = Flask(__name__)
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Template HTML pour l'interface de monitoring multi-bots
 HTML_TEMPLATE = """
@@ -124,10 +130,19 @@ HTML_TEMPLATE = """
 </html>
 """
 
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
+@require_auth
 def index():
-    """Page d'accueil avec interface de monitoring"""
+    """Page d'accueil avec interface de monitoring (protégée par authentification)"""
     return render_template_string(HTML_TEMPLATE)
+
+
+@app.route('/logout')
+def logout_route():
+    """Déconnexion de l'utilisateur"""
+    logout()
+    return redirect(url_for('index'))
+
 
 @app.route('/logs/bot')
 def get_bot_logs():
@@ -300,5 +315,13 @@ def get_containers():
 if __name__ == '__main__':
     print("📊 Log Monitor Service starting...")
     print("✅ Multi-bot monitoring ready (Redis removed)")
-    
+
+    # Initialize auth system
+    try:
+        ensure_configs_table()
+        init_default_admin()
+        print("🔐 Authentication system initialized")
+    except Exception as e:
+        print(f"⚠️ Auth initialization warning: {e}")
+
     app.run(host='0.0.0.0', port=8080, debug=False) 
