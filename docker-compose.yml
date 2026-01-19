@@ -16,7 +16,7 @@ services:
       - BOT_LOGS_HOST_DIR=/Users/thibaud/Documents/development/gladia-meet-project/gladia-meet-bot/persistent_data/logs
       - BOT_SCREENSHOTS_HOST_DIR=/Users/thibaud/Documents/development/gladia-meet-project/gladia-meet-bot/persistent_data/screenshots
       - BOT_ENABLE_SCREENSHOTS=${BOT_ENABLE_SCREENSHOTS:-false}
-      - GLADIA_API_URL=http://gladia-proxy:8084
+      - GLADIA_API_URL=http://whisper-streaming-proxy:8084
     volumes:
       - ./persistent_data:/opt/vexa-bot/persistent_data
     networks:
@@ -170,39 +170,58 @@ services:
       - "traefik.http.routers.admin-config.rule=Host(`admin-config.localhost`)"
       - "traefik.http.services.admin-config.loadbalancer.server.port=8080"
 
-  whisper-backend:
-    container_name: new-vexa-bot-whisper-backend
-    build:
-      context: ./services/whisper-backend
-      dockerfile: Dockerfile
-    environment:
-      - WHISPER_MODEL_SIZE=brandenkmurray/faster-whisper-large-v3-french-distil-dec16
-      # "medium" ~1.5GB VRAM/RAM, "large-v3" ~3GB. User has 4GB total RAM (3.1 available).
-      # "medium" is safer. "distil-large-v3" is also an option if supported by faster-whisper version.
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-    volumes:
-      - ./whisper-cache:/root/.cache/huggingface # Persist model downloads
-    restart: unless-stopped
-    depends_on:
-      - redis
-    networks:
-      - vexa_network
-      - vexa_default
+  # ANCIEN SYSTEME BATCH - COMMENTE (remplace par whisper-streaming-proxy)
+  # whisper-backend:
+  #   container_name: new-vexa-bot-whisper-backend
+  #   build:
+  #     context: ./services/whisper-backend
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - WHISPER_MODEL_SIZE=brandenkmurray/faster-whisper-large-v3-french-distil-dec16
+  #     - REDIS_HOST=redis
+  #     - REDIS_PORT=6379
+  #   volumes:
+  #     - ./whisper-cache:/root/.cache/huggingface
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - redis
+  #   networks:
+  #     - vexa_network
+  #     - vexa_default
 
-  gladia-proxy:
-    container_name: new-vexa-bot-gladia-proxy
+  # gladia-proxy:
+  #   container_name: new-vexa-bot-gladia-proxy
+  #   build:
+  #     context: ./services/gladia-murmure-proxy
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "9084:8084"
+  #   environment:
+  #     - PORT=8084
+  #     - WHISPER_API_URL=http://whisper-backend:5000
+  #     - PROXY_PUBLIC_HOST=gladia-proxy:8084
+  #   depends_on:
+  #     - whisper-backend
+  #   networks:
+  #     - vexa_network
+  #     - vexa_default
+
+  # NOUVEAU SYSTEME STREAMING - Transcription temps reel
+  whisper-streaming-proxy:
+    container_name: new-vexa-bot-whisper-streaming-proxy
     build:
-      context: ./services/gladia-murmure-proxy
+      context: ./services/whisper-streaming-proxy
       dockerfile: Dockerfile
     ports:
       - "9084:8084"
     environment:
-      - PORT=8084
-      - WHISPER_API_URL=http://whisper-backend:5000
-      - PROXY_PUBLIC_HOST=gladia-proxy:8084
+      - WHISPER_MODEL_SIZE=brandenkmurray/faster-whisper-large-v3-french-distil-dec16
+      - WHISPER_LANGUAGE=fr
+      - BOT_MANAGER_CALLBACK_URL=http://bot-manager:8080/bots/internal/transcript
+    volumes:
+      - ./whisper-cache:/root/.cache/huggingface
     depends_on:
-      - whisper-backend
+      - bot-manager
     networks:
       - vexa_network
       - vexa_default
