@@ -70,7 +70,7 @@ services:
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
       - DATABASE_USER=${POSTGRES_USER:-vexa}
-      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-vexapassword}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-vexa_password}
       - DATABASE_NAME=${POSTGRES_DB:-vexa}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
@@ -98,7 +98,7 @@ services:
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
       - DATABASE_USER=${POSTGRES_USER:-vexa}
-      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-vexapassword}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-vexa_password}
       - DATABASE_NAME=${POSTGRES_DB:-vexa}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
@@ -129,7 +129,7 @@ services:
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
       - DATABASE_USER=${POSTGRES_USER:-vexa}
-      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-vexapassword}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-vexa_password}
       - DATABASE_NAME=${POSTGRES_DB:-vexa}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
@@ -156,7 +156,7 @@ services:
       - DATABASE_HOST=postgres
       - DATABASE_PORT=5432
       - DATABASE_USER=${POSTGRES_USER:-vexa}
-      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-vexapassword}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-vexa_password}
       - DATABASE_NAME=${POSTGRES_DB:-vexa}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
