@@ -3,7 +3,7 @@ import httpx
 import asyncio
 import logging
 from whisper_streaming.whisper_online import FasterWhisperASR, OnlineASRProcessor
-from config import WHISPER_MODEL, LANGUAGE
+from config import WHISPER_MODEL, LANGUAGE, TRANSCRIPT_SOURCE
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,8 @@ class ASRSession:
             "transcript_text": self.full_text.strip(),
             "segments": self.segments,
             "language": LANGUAGE,
-            "duration": self.segments[-1]["end"] if self.segments else 0
+            "duration": self.segments[-1]["end"] if self.segments else 0,
+            "source": TRANSCRIPT_SOURCE,
         }
 
         logger.info(f"Sending transcript callback for meeting {self.meeting_id}: {len(self.segments)} segments, {len(self.full_text)} chars")

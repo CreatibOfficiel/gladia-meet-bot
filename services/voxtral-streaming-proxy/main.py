@@ -5,7 +5,7 @@ import uuid
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
-from asr_session import ASRSession
+from voxtral_session import VoxtralSession
 from config import BOT_MANAGER_URL
 
 logging.basicConfig(
@@ -14,13 +14,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Whisper Streaming Proxy")
+app = FastAPI(title="Voxtral Streaming Proxy")
 sessions = {}
 
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
     return {"status": "ok"}
 
 
@@ -30,7 +29,7 @@ async def create_session():
     session_id = str(uuid.uuid4())
     return JSONResponse(content={
         "id": session_id,
-        "url": f"ws://whisper-streaming-proxy:8085/v2/live?id={session_id}"
+        "url": f"ws://voxtral-streaming-proxy:8086/v2/live?id={session_id}"
     })
 
 
@@ -47,8 +46,11 @@ async def websocket_endpoint(
 
     logger.info(f"New WebSocket connection: session={session_id}, meeting={meeting_id}")
 
-    session = ASRSession(session_id, meeting_id, websocket, callback_url)
+    session = VoxtralSession(session_id, meeting_id, websocket, callback_url)
     sessions[session_id] = session
+
+    # Start background transcription
+    await session.start()
 
     # Compatibility with existing bot
     await websocket.send_json({"type": "init", "request_id": session_id})
@@ -75,4 +77,4 @@ async def websocket_endpoint(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8085)
+    uvicorn.run(app, host="0.0.0.0", port=8086)

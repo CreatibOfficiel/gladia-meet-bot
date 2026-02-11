@@ -16,7 +16,7 @@ services:
       - BOT_LOGS_HOST_DIR=/Users/thibaud/Documents/development/gladia-meet-project/gladia-meet-bot/persistent_data/logs
       - BOT_SCREENSHOTS_HOST_DIR=/Users/thibaud/Documents/development/gladia-meet-project/gladia-meet-bot/persistent_data/screenshots
       - BOT_ENABLE_SCREENSHOTS=${BOT_ENABLE_SCREENSHOTS:-false}
-      - GLADIA_API_URL=http://whisper-streaming-proxy:8084
+      - GLADIA_API_URL=http://audio-router:8084
     volumes:
       - ./persistent_data:/opt/vexa-bot/persistent_data
     networks:
@@ -102,8 +102,10 @@ services:
       - DATABASE_NAME=vexa
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - LOGS_DIR=/opt/vexa-bot/persistent_data/logs
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./persistent_data/logs:/opt/vexa-bot/persistent_data/logs:ro
     depends_on:
       - postgres
     networks:
@@ -150,7 +152,7 @@ services:
       context: ./services
       dockerfile: admin-config/Dockerfile
     ports:
-      - "9086:8080"
+      - "9087:8080"
     environment:
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-dev-secret-key-change-in-production}
       - DATABASE_HOST=postgres
@@ -207,19 +209,61 @@ services:
   #     - vexa_default
 
   # NOUVEAU SYSTEME STREAMING - Transcription temps reel
+
+  # Audio Router - multiplexe l'audio vers les backends ASR
+  audio-router:
+    container_name: new-vexa-bot-audio-router
+    build:
+      context: ./services/audio-router
+      dockerfile: Dockerfile
+    ports:
+      - "9084:8084"
+    environment:
+      - ASR_BACKENDS=whisper,voxtral
+      - WHISPER_BACKEND_URL=http://whisper-streaming-proxy:8085
+      - VOXTRAL_BACKEND_URL=http://voxtral-streaming-proxy:8086
+    depends_on:
+      - whisper-streaming-proxy
+      - voxtral-streaming-proxy
+    networks:
+      - vexa_network
+      - vexa_default
+
+  # Whisper backend (local, GPU)
   whisper-streaming-proxy:
     container_name: new-vexa-bot-whisper-streaming-proxy
     build:
       context: ./services/whisper-streaming-proxy
       dockerfile: Dockerfile
     ports:
-      - "9084:8084"
+      - "9085:8085"
     environment:
       - WHISPER_MODEL_SIZE=brandenkmurray/faster-whisper-large-v3-french-distil-dec16
       - WHISPER_LANGUAGE=fr
       - BOT_MANAGER_CALLBACK_URL=http://bot-manager:8080/bots/internal/transcript
+      - TRANSCRIPT_SOURCE=whisper
     volumes:
       - ./whisper-cache:/root/.cache/huggingface
+    depends_on:
+      - bot-manager
+    networks:
+      - vexa_network
+      - vexa_default
+
+  # Voxtral backend (Mistral API)
+  voxtral-streaming-proxy:
+    container_name: new-vexa-bot-voxtral-streaming-proxy
+    build:
+      context: ./services/voxtral-streaming-proxy
+      dockerfile: Dockerfile
+    ports:
+      - "9086:8086"
+    environment:
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY}
+      - VOXTRAL_MODEL=voxtral-mini-transcribe-realtime-2602
+      - VOXTRAL_LANGUAGE=fr
+      - BOT_MANAGER_CALLBACK_URL=http://bot-manager:8080/bots/internal/transcript
+      - TRANSCRIPT_SOURCE=voxtral
     depends_on:
       - bot-manager
     networks:

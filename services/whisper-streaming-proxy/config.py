@@ -9,3 +9,4 @@ BOT_MANAGER_URL = os.getenv(
     "BOT_MANAGER_CALLBACK_URL",
     "http://bot-manager:8080/bots/internal/transcript"
 )
+TRANSCRIPT_SOURCE = os.getenv("TRANSCRIPT_SOURCE", "whisper")

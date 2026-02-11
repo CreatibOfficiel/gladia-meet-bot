@@ -640,6 +640,7 @@ class TranscriptPayload(BaseModel):
     segments: List[Dict[str, Any]]
     language: str
     duration: float
+    source: Optional[str] = "default"  # "whisper", "voxtral", etc.
 # -----------------------------------------------------
 
 @app.post("/bots/internal/transcript",
@@ -655,8 +656,9 @@ async def save_transcript(
     Receives final transcript from Whisper Worker.
     Updates DB and triggers n8n webhook.
     """
-    logger.info(f"Received transcript for meeting {payload.meeting_id}. Language: {payload.language}")
-    
+    source = payload.source or "default"
+    logger.info(f"Received transcript for meeting {payload.meeting_id}. Language: {payload.language}, Source: {source}")
+
     try:
         meeting = await db.get(Meeting, payload.meeting_id)
         if not meeting:
@@ -665,7 +667,17 @@ async def save_transcript(
 
         # Update meeting data
         current_data = meeting.data or {}
-        current_data['transcript'] = payload.dict() # Save full payload including segments
+
+        # Store transcript by source in 'transcripts' dict
+        if 'transcripts' not in current_data:
+            current_data['transcripts'] = {}
+        current_data['transcripts'][source] = payload.dict()
+
+        # Keep backward compatibility: 'transcript' points to the primary source
+        # The first transcript received becomes the primary, or whisper takes precedence
+        if 'transcript' not in current_data or source == "whisper":
+            current_data['transcript'] = payload.dict()
+
         meeting.data = current_data
         
         # We can also update status if needed, but usually 'completed' is set by exit callback
@@ -688,6 +700,40 @@ async def save_transcript(
         logger.error(f"Error saving transcript: {e}", exc_info=True)
         await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/meetings/{meeting_id}/transcripts/compare",
+         summary="Compare transcripts from different sources",
+         include_in_schema=True)
+async def compare_transcripts(
+    meeting_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns transcripts from all sources side by side for comparison."""
+    try:
+        meeting = await db.get(Meeting, meeting_id)
+        if not meeting:
+            raise HTTPException(status_code=404, detail="Meeting not found")
+
+        current_data = meeting.data or {}
+        transcripts = current_data.get('transcripts', {})
+
+        # If no multi-source transcripts, fall back to legacy single transcript
+        if not transcripts and 'transcript' in current_data:
+            transcripts = {"default": current_data['transcript']}
+
+        return {
+            "meeting_id": meeting_id,
+            "sources": list(transcripts.keys()),
+            "transcripts": transcripts,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error comparing transcripts for meeting {meeting_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/bots/status",
          response_model=BotStatusResponse,
